@@ -136,6 +136,23 @@ test('uploads_are_rate_limited', function (): void {
     $this->post('/api/imports/importers/assets/sessions', ['file' => assetsCsv(assetRows(1))], ['Accept' => 'application/json'])->assertTooManyRequests();
 });
 
+test('the_upload_rate_limit_is_configurable', function (int $limit, int $allowed): void {
+    config()->set('imports.routes.upload_limit', $limit);
+    $team = team();
+    $this->actingAs(admin($team));
+
+    for ($i = 0; $i < $allowed; $i++) {
+        $this->post('/api/imports/importers/assets/sessions', ['file' => assetsCsv(assetRows(1))], ['Accept' => 'application/json'])->assertCreated();
+    }
+
+    $last = $this->post('/api/imports/importers/assets/sessions', ['file' => assetsCsv(assetRows(1))], ['Accept' => 'application/json']);
+
+    $limit === 0 ? $last->assertCreated() : $last->assertTooManyRequests();
+})->with([
+    'two a minute' => [2, 2],
+    'off' => [0, 12],
+]);
+
 test('upload_rejections_answer_422_with_a_clear_message', function (): void {
     $team = team();
     $this->actingAs(admin($team));

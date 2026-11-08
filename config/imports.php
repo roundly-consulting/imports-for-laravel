@@ -179,6 +179,8 @@ return [
         'enabled' => env('IMPORTS_ROUTES') ?: 'off',
         'prefix' => 'api/imports',
         'middleware' => ['api', 'auth'],
+        // Uploads per minute per user and owner (both upload endpoints); 0 = no limit.
+        'upload_limit' => env('IMPORTS_UPLOAD_LIMIT', 10),
         // A Contracts\ResolvesImportOwner class; null = the authenticated user owns its imports.
         'owner_resolver' => null,
     ],

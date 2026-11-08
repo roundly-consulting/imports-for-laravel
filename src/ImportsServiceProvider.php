@@ -81,7 +81,7 @@ final class ImportsServiceProvider extends PackageServiceProvider
             $options->register(['imports.mappings' => SavedMappings::class]);
         });
 
-        RateLimiter::for('imports-upload', static fn (Request $request): Limit => Limit::perMinute(10)->by(self::throttleKey($request)));
+        RateLimiter::for('imports-upload', static fn (Request $request): Limit => ImportsConfig::uploadLimit() === 0 ? Limit::none() : Limit::perMinute(ImportsConfig::uploadLimit())->by(self::throttleKey($request)));
     }
 
     private static function throttleKey(Request $request): string

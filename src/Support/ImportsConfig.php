@@ -569,6 +569,14 @@ final class ImportsConfig
         return Config::boolean('imports.routes.enabled', false);
     }
 
+    /**
+     * Uploads per minute per user (and owner) through the JSON API; 0 = no limit.
+     */
+    public static function uploadLimit(): int
+    {
+        return Config::integer('imports.routes.upload_limit', 10, min: 0, max: 10_000);
+    }
+
     public static function routesPrefix(): string
     {
         return trim(Config::string('imports.routes.prefix', 'api/imports'), '/');
