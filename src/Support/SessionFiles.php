@@ -90,13 +90,21 @@ final class SessionFiles
 
     public static function delete(ImportSession $session): void
     {
-        $filesystem = Storage::disk($session->file_disk);
-        $directory = dirname($session->file_path);
+        self::deletePaths($session->file_disk, $session->file_path, $session->working_copy_path);
+    }
+
+    /**
+     * The same, from paths read before the session row changed.
+     */
+    public static function deletePaths(string $disk, string $filePath, ?string $workingCopyPath): void
+    {
+        $filesystem = Storage::disk($disk);
+        $directory = dirname($filePath);
 
         if (str_starts_with($directory, ImportsConfig::storagePath().'/')) {
             $filesystem->deleteDirectory($directory);
         } else {
-            $filesystem->delete(array_values(array_filter([$session->file_path, $session->working_copy_path])));
+            $filesystem->delete(array_values(array_filter([$filePath, $workingCopyPath])));
         }
     }
 }

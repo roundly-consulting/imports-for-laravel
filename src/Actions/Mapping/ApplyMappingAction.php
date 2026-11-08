@@ -44,12 +44,13 @@ final readonly class ApplyMappingAction
 
         $resolved = $this->resolve($session, $importer, $mapping);
 
-        SessionState::resetPreview($session);
-        $session->forceFill([
-            'mapping' => $resolved,
-            'mapping_source' => MappingSource::Manual,
-            'status' => SessionStatus::Mapped,
-        ])->save();
+        SessionState::transition($session, static function () use ($session, $resolved): void {
+            $session->forceFill([
+                'mapping' => $resolved,
+                'mapping_source' => MappingSource::Manual,
+                'status' => SessionStatus::Mapped,
+            ])->save();
+        }, resetPreview: true);
 
         Event::dispatch(new ImportMapped(Audits::for($session, null, $actor)));
 

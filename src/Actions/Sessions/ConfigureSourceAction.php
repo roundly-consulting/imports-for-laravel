@@ -60,23 +60,25 @@ final readonly class ConfigureSourceAction
             $headers = $file->headers();
             $dataRows = $file->count();
 
-            SessionState::resetPreview($session);
-            $session->forceFill([
-                'sheet' => $file->sheet(),
-                'delimiter' => $file->delimiter(),
-                'delimiter_source' => $delimiter !== null ? DelimiterSource::Override : $file->delimiterSource(),
-                'header_row' => $file->headerRow(),
-                'date1904' => $file->date1904(),
-                'headers' => $headers,
-                'data_rows' => $dataRows,
-            ]);
-
             $saved = ImportsConfig::mappingsEnabled() && ! HeaderNormalizer::collide($headers)
                 ? $this->mappings->bySignature($owner, $importer->key(), HeaderNormalizer::signature($headers))
                 : null;
+            $suggestion = Suggester::suggest($importer, $headers, $file->displayHeaders(), $session->locale, $saved);
 
-            SessionState::applySuggestion($session, Suggester::suggest($importer, $headers, $file->displayHeaders(), $session->locale, $saved));
-            $session->save();
+            SessionState::transition($session, static function () use ($session, $file, $delimiter, $headers, $dataRows, $suggestion): void {
+                $session->forceFill([
+                    'sheet' => $file->sheet(),
+                    'delimiter' => $file->delimiter(),
+                    'delimiter_source' => $delimiter !== null ? DelimiterSource::Override : $file->delimiterSource(),
+                    'header_row' => $file->headerRow(),
+                    'date1904' => $file->date1904(),
+                    'headers' => $headers,
+                    'data_rows' => $dataRows,
+                ]);
+
+                SessionState::applySuggestion($session, $suggestion);
+                $session->save();
+            }, resetPreview: true);
         } finally {
             $file?->close();
             TempFiles::remove($temp);

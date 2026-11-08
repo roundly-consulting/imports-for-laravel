@@ -15,6 +15,7 @@ use RoundlyConsulting\Imports\DataTransferObjects\SweepReport;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Events\ImportExpired;
 use RoundlyConsulting\Imports\Events\ImportPreviewFailed;
+use RoundlyConsulting\Imports\Exceptions\ImportStateException;
 use RoundlyConsulting\Imports\Jobs\ValidatePreviewJob;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Support\Audits;
@@ -23,6 +24,7 @@ use RoundlyConsulting\Imports\Support\ImportModels;
 use RoundlyConsulting\Imports\Support\ImportsConfig;
 use RoundlyConsulting\Imports\Support\Keys;
 use RoundlyConsulting\Imports\Support\SessionFiles;
+use RoundlyConsulting\Imports\Support\SessionState;
 use RoundlyConsulting\Imports\Support\TempFiles;
 use Throwable;
 
@@ -47,8 +49,9 @@ final readonly class SweepImportsAction
             ->where('expires_at', '<', $now)
             ->chunkById(200, function ($sessions) use (&$expired): void {
                 foreach ($sessions as $session) {
-                    $this->expire($session);
-                    $expired++;
+                    if ($this->expire($session)) {
+                        $expired++;
+                    }
                 }
             });
 
@@ -158,22 +161,36 @@ final readonly class SweepImportsAction
         return true;
     }
 
-    private function expire(ImportSession $session): void
+    /**
+     * Expire an uncommitted session — unless a commit took it after the query above read it — and
+     * only then delete its files.
+     */
+    private function expire(ImportSession $session): bool
     {
+        [$disk, $path, $workingCopy] = [$session->file_disk, $session->file_path, $session->working_copy_path];
+
         try {
-            SessionFiles::delete($session);
+            SessionState::transition($session, static function () use ($session): void {
+                ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
+                $session->forceFill([
+                    'status' => SessionStatus::Expired,
+                    'preview_version' => $session->preview_version + 1,
+                    'working_copy_path' => null,
+                    'file_pruned_at' => Clock::now(),
+                ])->save();
+            });
+        } catch (ImportStateException) {
+            return false;
+        }
+
+        try {
+            SessionFiles::deletePaths($disk, $path, $workingCopy);
         } catch (Throwable $exception) {
             report($exception);
         }
 
-        ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
-        $session->forceFill([
-            'status' => SessionStatus::Expired,
-            'preview_version' => $session->preview_version + 1,
-            'working_copy_path' => null,
-            'file_pruned_at' => Clock::now(),
-        ])->save();
-
         Event::dispatch(new ImportExpired(Audits::for($session, null, null)));
+
+        return true;
     }
 }

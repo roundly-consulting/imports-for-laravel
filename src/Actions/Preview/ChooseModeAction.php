@@ -44,13 +44,16 @@ final readonly class ChooseModeAction
         }
 
         if ($session->status === SessionStatus::Previewed) {
-            $counts = $this->classify->execute($session, $mode);
-            $session->forceFill(['mode' => $mode, 'counts' => $counts->toArray(), 'preview_version' => $session->preview_version + 1])->save();
+            // The re-plan writes row results: it runs under the session lock, on the version read.
+            SessionState::transition($session, function () use ($session, $mode): void {
+                $counts = $this->classify->execute($session, $mode);
+                $session->forceFill(['mode' => $mode, 'counts' => $counts->toArray(), 'preview_version' => $session->preview_version + 1])->save();
+            }, $session->preview_version);
 
             return $session;
         }
 
-        $session->forceFill(['mode' => $mode])->save();
+        SessionState::transition($session, static fn (): bool => $session->forceFill(['mode' => $mode])->save());
 
         return $session;
     }

@@ -32,16 +32,23 @@ final readonly class DiscardImportAction
         Access::check($this->registry->find($session->importer), $actor, Audits::owner($session), ImportOperation::Upload);
         SessionState::assertBeforeCommit($session);
 
-        SessionFiles::delete($session);
-        ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
+        // The source and working copy go only once the discard is written: a discard refused
+        // because a commit took the session meanwhile leaves the commit its files.
+        [$disk, $path, $workingCopy] = [$session->file_disk, $session->file_path, $session->working_copy_path];
 
-        $session->forceFill([
-            'status' => SessionStatus::Discarded,
-            'preview_version' => $session->preview_version + 1,
-            'working_copy_path' => null,
-            'file_pruned_at' => Clock::now(),
-        ])->save();
-        $session->delete();
+        SessionState::transition($session, static function () use ($session): void {
+            ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
+
+            $session->forceFill([
+                'status' => SessionStatus::Discarded,
+                'preview_version' => $session->preview_version + 1,
+                'working_copy_path' => null,
+                'file_pruned_at' => Clock::now(),
+            ])->save();
+            $session->delete();
+        });
+
+        SessionFiles::deletePaths($disk, $path, $workingCopy);
 
         Event::dispatch(new ImportDiscarded(Audits::for($session, null, $actor)));
 

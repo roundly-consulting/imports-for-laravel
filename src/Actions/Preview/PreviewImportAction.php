@@ -64,9 +64,10 @@ final readonly class PreviewImportAction
             throw ImportStateException::wrongStatus($session->status->value);
         }
 
-        SessionState::resetPreview($session);
-        // last_progress_at starts the clock imports:sweep reads to release a lost validation.
-        $session->forceFill(['status' => SessionStatus::Validating, 'last_progress_at' => Clock::now()])->save();
+        SessionState::transition($session, static function () use ($session): void {
+            // last_progress_at starts the clock imports:sweep reads to release a lost validation.
+            $session->forceFill(['status' => SessionStatus::Validating, 'last_progress_at' => Clock::now()])->save();
+        }, resetPreview: true);
         $version = $session->preview_version;
 
         $inline = $queue === false
