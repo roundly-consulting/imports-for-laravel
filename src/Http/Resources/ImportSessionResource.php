@@ -48,7 +48,8 @@ final class ImportSessionResource extends JsonResource
             'delimiter' => $session->delimiter,
             'header_row' => $session->header_row,
             'headers' => SessionState::displayHeaders($session),
-            'mapping' => $session->mapping ?? [],
+            // A list of pairs: a resource would re-index an array keyed by column number.
+            'mapping' => array_map(static fn (int|string $column, string $field): array => ['column' => (int) $column, 'field' => $field], array_keys($session->mapping ?? []), array_values($session->mapping ?? [])),
             'mode' => $session->mode->value,
             'data_rows' => $session->data_rows,
             'counts' => $counts->toArray(),
