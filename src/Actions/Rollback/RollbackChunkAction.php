@@ -11,6 +11,7 @@ use RoundlyConsulting\Imports\Contracts\OwnerScope;
 use RoundlyConsulting\Imports\Definition\ImportDefinition;
 use RoundlyConsulting\Imports\Enums\RecordAction;
 use RoundlyConsulting\Imports\Enums\RollbackOutcome;
+use RoundlyConsulting\Imports\Enums\RollbackStatus;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
 use RoundlyConsulting\Imports\Pipeline\Scoped;
@@ -54,6 +55,10 @@ final readonly class RollbackChunkAction
         $context = new ImportContext($owner, Audits::rollbackActor($batch), $definition, Keys::of($session), Keys::of($batch), $session->mode, $session->locale, $session->timezone, $this->scope);
 
         $this->scope->run($owner, function () use ($batch, $definition, $context, $fromId, $toId, $owner): void {
+            if (! self::rollingBack($batch)) {
+                return;
+            }
+
             $ledgers = ImportModels::record()::query()
                 ->where('batch_id', $batch->getKey())
                 ->where('action', RecordAction::Created->value)
@@ -68,13 +73,24 @@ final readonly class RollbackChunkAction
         });
     }
 
+    private static function rollingBack(ImportBatch $batch): bool
+    {
+        return ImportModels::batch()::query()->whereKey($batch->getKey())->where('rollback_status', RollbackStatus::RollingBack->value)->exists();
+    }
+
     private function undo(ImportBatch $batch, ImportDefinition $definition, ImportContext $context, Model $owner, ImportedRecord $ledger): void
     {
         $connection = $batch->getConnection();
 
         try {
-            $connection->transaction(function () use ($definition, $context, $owner, $ledger): void {
-                $fresh = ImportModels::record()::query()->whereKey($ledger->getKey())->lockForUpdate()->first();
+            $connection->transaction(function () use ($batch, $definition, $context, $owner, $ledger): void {
+                // Re-checked with the ledger row's lock, in the same query: a rollback the package
+                // stopped meanwhile (failed, abandoned) never deletes another record.
+                $fresh = ImportModels::record()::query()
+                    ->whereKey($ledger->getKey())
+                    ->whereIn('batch_id', ImportModels::batch()::query()->select('id')->whereKey($batch->getKey())->where('rollback_status', RollbackStatus::RollingBack->value))
+                    ->lockForUpdate()
+                    ->first();
 
                 if ($fresh === null || $fresh->rolled_back_at !== null) {
                     return;

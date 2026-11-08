@@ -18,6 +18,7 @@ use Illuminate\Validation\ValidationException;
 use RoundlyConsulting\Imports\Contracts\OwnerScope;
 use RoundlyConsulting\Imports\DataTransferObjects\ImportSummary;
 use RoundlyConsulting\Imports\Definition\ImportDefinition;
+use RoundlyConsulting\Imports\Enums\BatchStatus;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
 use RoundlyConsulting\Imports\Enums\RecordAction;
 use RoundlyConsulting\Imports\Enums\RowOutcome;
@@ -54,7 +55,7 @@ use Throwable;
 
 /**
  * Commits one chunk in ONE transaction on the import connection: it opens by claiming the batch
- * row (`lockForUpdate()` + `chunks_completed === index`; anything else is a duplicate delivery or
+ * row (`lockForUpdate()` + `status = running` + `chunks_completed === index`; anything else is a duplicate delivery or
  * a retry of a committed chunk → no work), then writes each row in its own savepoint together with
  * its ledger row, and finally moves the chunk counter. The host write, the ledger, the row results
  * and the counter commit or roll back together — a retry after a crash is a no-op or a clean redo.
@@ -125,7 +126,7 @@ final readonly class ProcessChunkAction
         $work = function () use ($batch, $session, $owner, $importer, $index, $rows, $connection): ?ImportSummary {
             $claimed = ImportModels::batch()::query()->whereKey($batch->getKey())->lockForUpdate()->first();
 
-            if ($claimed === null || $claimed->chunks_completed !== $index) {
+            if (! self::claims($claimed, $index)) {
                 return null;
             }
 
@@ -230,7 +231,7 @@ final readonly class ProcessChunkAction
         $work = function () use ($batch, $session, $owner, $importer, $index, $results, $connection): ?ImportSummary {
             $claimed = ImportModels::batch()::query()->whereKey($batch->getKey())->lockForUpdate()->first();
 
-            if ($claimed === null || $claimed->chunks_completed !== $index) {
+            if (! self::claims($claimed, $index)) {
                 return null;
             }
 
@@ -294,6 +295,17 @@ final readonly class ProcessChunkAction
         $summary = $connection->transactionLevel() === 0 ? $connection->transaction($work, 3) : $connection->transaction($work);
 
         return [$summary, $results->count()];
+    }
+
+    /**
+     * Only a running batch at exactly this chunk does work: a failed, abandoned or cancelled batch
+     * never writes again, whatever its leftover jobs do.
+     *
+     * @phpstan-assert-if-true ImportBatch $claimed
+     */
+    private static function claims(?ImportBatch $claimed, int $index): bool
+    {
+        return $claimed !== null && $claimed->status === BatchStatus::Running && $claimed->chunks_completed === $index;
     }
 
     /**

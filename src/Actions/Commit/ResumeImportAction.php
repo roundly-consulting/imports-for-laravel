@@ -57,7 +57,7 @@ final readonly class ResumeImportAction
         ])->save();
 
         Event::dispatch(new ImportResumed(Audits::for($session, $batch, $actor)));
-        Commits::dispatch($batch, $batch->chunks_completed);
+        Commits::dispatchOrFail($batch, $batch->chunks_completed);
 
         return $batch->refresh();
     }

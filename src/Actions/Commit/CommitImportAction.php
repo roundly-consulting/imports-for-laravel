@@ -78,7 +78,7 @@ final readonly class CommitImportAction
         }
 
         Event::dispatch(new ImportStarted(Audits::for($session, $batch, $actor)));
-        Commits::dispatch($batch, 0);
+        Commits::dispatchOrFail($batch, 0);
 
         return $batch->refresh();
     }

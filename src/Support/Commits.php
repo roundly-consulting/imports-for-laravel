@@ -22,7 +22,22 @@ use Throwable;
  */
 final class Commits
 {
-    public static function dispatch(ImportBatch $batch, int $from): void
+    /**
+     * Dispatch, and when the queue refuses the batch, fail the commit at once (`dispatch_failed`,
+     * `ImportFailed`, the lock released) instead of leaving it `committing` until the sweep.
+     */
+    public static function dispatchOrFail(ImportBatch $batch, int $from): void
+    {
+        try {
+            self::dispatch($batch, $from);
+        } catch (Throwable $exception) {
+            app(FailImportAction::class)->execute(Keys::of($batch), 'dispatch_failed', $exception->getMessage());
+
+            throw $exception;
+        }
+    }
+
+    private static function dispatch(ImportBatch $batch, int $from): void
     {
         $batchId = Keys::of($batch);
 

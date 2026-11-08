@@ -11,6 +11,7 @@ use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Events\ImportRollbackFailed;
 use RoundlyConsulting\Imports\Events\ImportRolledBack;
 use RoundlyConsulting\Imports\Support\Audits;
+use RoundlyConsulting\Imports\Support\Batches;
 use RoundlyConsulting\Imports\Support\Clock;
 use RoundlyConsulting\Imports\Support\ImportModels;
 use RoundlyConsulting\Imports\Support\RollbackReports;
@@ -34,6 +35,10 @@ final readonly class FinishRollbackAction
         }
 
         $session = $batch->session;
+
+        if ($failure !== null) {
+            Batches::cancel($batch->rollback_batch_id);
+        }
 
         $this->scope->run(Audits::owner($session), static function () use ($batch, $session, $failure): void {
             $report = RollbackReports::build($batch);
