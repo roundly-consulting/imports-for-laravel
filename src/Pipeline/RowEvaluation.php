@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Imports\Pipeline;
 
 use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\Imports\DataTransferObjects\CellError;
 use RoundlyConsulting\Imports\Enums\RowStatus;
 use RoundlyConsulting\Imports\Reading\Cell;
 use RoundlyConsulting\Imports\Rows\ImportRow;
@@ -18,7 +19,7 @@ final class RowEvaluation
 {
     public RowStatus $status = RowStatus::Valid;
 
-    /** @var list<array{field: string|null, column: int|null, code: string, message: string, value: string|null}> */
+    /** @var list<CellError> */
     public array $errors = [];
 
     /** @var array<string, mixed> */
@@ -52,13 +53,7 @@ final class RowEvaluation
     public function fail(?string $field, ?int $column, string $code, string $message, ?string $value): void
     {
         $this->status = RowStatus::Invalid;
-        $this->errors[] = [
-            'field' => $field,
-            'column' => $column,
-            'code' => $code,
-            'message' => $message,
-            'value' => $value === null ? null : mb_substr($value, 0, 100),
-        ];
+        $this->errors[] = CellError::at($field, $column, $code, $message, $value);
     }
 
     public function isValid(): bool

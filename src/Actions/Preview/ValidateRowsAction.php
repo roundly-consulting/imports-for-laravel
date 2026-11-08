@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Imports\Contracts\OwnerScope;
+use RoundlyConsulting\Imports\DataTransferObjects\CellError;
 use RoundlyConsulting\Imports\DataTransferObjects\ImportCounts;
 use RoundlyConsulting\Imports\Enums\RowStatus;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
@@ -246,7 +247,7 @@ final readonly class ValidateRowsAction
 
         if ($evaluation->status === RowStatus::DuplicateInFile) {
             $code = $evaluation->duplicateReason ?? 'duplicate_in_file';
-            $errors = [['field' => null, 'column' => null, 'code' => $code, 'message' => Locales::line('imports::validation.'.$code, [], $session->locale), 'value' => null]];
+            $errors = [CellError::row($code, Locales::line('imports::validation.'.$code, [], $session->locale))];
         }
 
         return [
@@ -254,7 +255,7 @@ final readonly class ValidateRowsAction
             'row_number' => $evaluation->number,
             'status' => $evaluation->status->value,
             'outcome' => $evaluation->status === RowStatus::Invalid ? null : $outcome,
-            'errors' => $errors === [] ? null : $errors,
+            'errors' => $errors === [] ? null : CellError::storedList($errors),
             'match_key' => $evaluation->matchKey,
             'match_candidate' => $evaluation->matchCandidate,
             'matched_record_id' => $evaluation->match?->getKey(),

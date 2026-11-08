@@ -30,7 +30,7 @@ $fresh = function (): void {
     Hooks::reset();
 };
 
-uses(TestCase::class)->beforeEach($fresh)->in('Acceptance', 'Arch', 'Feature', 'Memory', 'RealEngine');
+uses(TestCase::class)->beforeEach($fresh)->in('Acceptance', 'Arch', 'Feature', 'Memory', 'Performance', 'RealEngine');
 uses(TeamsGroupTestCase::class)->beforeEach($fresh)->in('Teams');
 uses(HttpTestCase::class)->beforeEach($fresh)->in('Http');
 uses(KeyTypesTestCase::class)->beforeEach($fresh)->in('KeyTypes');

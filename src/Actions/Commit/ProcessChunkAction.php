@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Imports\Actions\Commit;
 
-use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Container\Container;
@@ -16,7 +15,10 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
 use RoundlyConsulting\Imports\Contracts\OwnerScope;
+use RoundlyConsulting\Imports\DataTransferObjects\CellError;
+use RoundlyConsulting\Imports\DataTransferObjects\ChunkOutcome;
 use RoundlyConsulting\Imports\DataTransferObjects\ImportSummary;
+use RoundlyConsulting\Imports\DataTransferObjects\WrittenRow;
 use RoundlyConsulting\Imports\Definition\ImportDefinition;
 use RoundlyConsulting\Imports\Enums\BatchStatus;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
@@ -25,6 +27,7 @@ use RoundlyConsulting\Imports\Enums\RowOutcome;
 use RoundlyConsulting\Imports\Enums\RowStatus;
 use RoundlyConsulting\Imports\Events\ImportChunkProcessed;
 use RoundlyConsulting\Imports\Exceptions\ImportRowException;
+use RoundlyConsulting\Imports\Exceptions\InvalidImporterDefinitionException;
 use RoundlyConsulting\Imports\FileImporter;
 use RoundlyConsulting\Imports\Importer;
 use RoundlyConsulting\Imports\Models\ImportBatch;
@@ -41,12 +44,12 @@ use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\Audits;
 use RoundlyConsulting\Imports\Support\Checksums;
 use RoundlyConsulting\Imports\Support\Clock;
-use RoundlyConsulting\Imports\Support\Digests;
 use RoundlyConsulting\Imports\Support\Failures;
 use RoundlyConsulting\Imports\Support\FileDuplicateCheck;
 use RoundlyConsulting\Imports\Support\ImportModels;
 use RoundlyConsulting\Imports\Support\Keys;
 use RoundlyConsulting\Imports\Support\KeyTypes;
+use RoundlyConsulting\Imports\Support\LedgerWriter;
 use RoundlyConsulting\Imports\Support\Locales;
 use RoundlyConsulting\Imports\Support\SessionRows;
 use RoundlyConsulting\Imports\Support\SessionState;
@@ -96,7 +99,9 @@ final readonly class ProcessChunkAction
             }
 
             if ($importer instanceof FileImporter) {
-                [$summary, $count] = $this->commitFiles($batch, $session, $owner, $importer, $index);
+                $outcome = $this->commitFiles($batch, $session, $owner, $importer, $index);
+                $summary = $outcome->summary;
+                $count = $outcome->rows;
             } elseif ($importer instanceof Importer) {
                 $temp = TempFiles::directory();
 
@@ -149,7 +154,7 @@ final readonly class ProcessChunkAction
 
             $pipeline = new RowPipeline($importer, SessionState::mapping($session)->toArray(), count($session->headers), $owner, $this->scope, $session->locale, $session->timezone, $this->validation);
             $context = new ImportContext($owner, Audits::committer($batch), $importer, Keys::of($session), Keys::of($batch), $session->mode, $session->locale, $session->timezone, $this->scope);
-            $created = [];
+            $written = [];
 
             foreach ($pending === [] ? [] : $pipeline->evaluate($pending, new InFileKeys) as $evaluation) {
                 if ($evaluation->templateRow) {
@@ -184,33 +189,24 @@ final readonly class ProcessChunkAction
                     continue;
                 }
 
-                $written = $this->write(
-                    $connection, $batch, $session, $owner, $importer, $evaluation->number,
+                $write = $this->write(
+                    $connection, $session, $owner, $importer, $evaluation->number,
                     static fn (): Model => $plan === RowOutcome::Update && $match !== null ? $importer->update($match, $row, $context) : $importer->create($row, $context),
                     $plan === RowOutcome::Update,
                     null,
                 );
 
-                if ($written === null) {
-                    continue;
-                }
-
-                [$action, $record] = $written;
-
-                if ($action === 'failed') {
+                if ($write === null) {
                     $counts['failed']++;
 
                     continue;
                 }
 
-                $counts[$action->value]++;
-
-                if ($action === RecordAction::Created && $record !== null) {
-                    $created[$record::class][] = $record->getKey();
-                }
+                $counts[$write->action->value]++;
+                $written[] = $write;
             }
 
-            return $this->complete($claimed, $session, $importer, $owner, $index, $counts, $created);
+            return $this->complete($claimed, $session, $importer, $owner, $index, $counts, $written);
         };
 
         return $connection->transactionLevel() === 0 ? $connection->transaction($work, 3) : $connection->transaction($work);
@@ -219,10 +215,8 @@ final readonly class ProcessChunkAction
     /**
      * A file-batch chunk: every valid entry of the range becomes one record through the file
      * importer's callback; hashes are re-checked against the ledger first.
-     *
-     * @return array{0: ImportSummary|null, 1: int}
      */
-    private function commitFiles(ImportBatch $batch, ImportSession $session, Model $owner, FileImporter $importer, int $index): array
+    private function commitFiles(ImportBatch $batch, ImportSession $session, Model $owner, FileImporter $importer, int $index): ChunkOutcome
     {
         $connection = $batch->getConnection();
         $first = (int) (($session->chunk_offsets ?? [])[$index][1] ?? 0);
@@ -239,7 +233,7 @@ final readonly class ProcessChunkAction
             $hashes = array_values(array_filter($results->where('status', RowStatus::Valid)->pluck('content_hash')->all(), 'is_string'));
             $earlier = FileDuplicateCheck::earlier($importer, $owner, $hashes, Keys::of($session));
             $counts = ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0, 'reclassified' => 0, 'duplicates' => 0, 'invalid' => 0];
-            $created = [];
+            $written = [];
 
             foreach ($results as $result) {
                 if ($result->status === RowStatus::Invalid || $result->status === RowStatus::Failed) {
@@ -265,36 +259,29 @@ final readonly class ProcessChunkAction
                     (string) $result->stored_path,
                 );
 
-                [$action, $record] = $this->write(
-                    $connection, $batch, $session, $owner, $importer, $result->row_number,
+                $write = $this->write(
+                    $connection, $session, $owner, $importer, $result->row_number,
                     static fn (): Model => $importer->create($file, $context),
                     false,
                     $result->content_hash,
-                ) ?? ['skipped', null];
+                );
 
-                if ($action === 'skipped') {
-                    continue;
-                }
-
-                if ($action === 'failed') {
+                if ($write === null) {
                     $counts['failed']++;
 
                     continue;
                 }
 
-                $counts[$action->value]++;
-
-                if ($action === RecordAction::Created && $record !== null) {
-                    $created[$record::class][] = $record->getKey();
-                }
+                $counts[$write->action->value]++;
+                $written[] = $write;
             }
 
-            return $this->complete($claimed, $session, $importer, $owner, $index, $counts, $created);
+            return $this->complete($claimed, $session, $importer, $owner, $index, $counts, $written);
         };
 
         $summary = $connection->transactionLevel() === 0 ? $connection->transaction($work, 3) : $connection->transaction($work);
 
-        return [$summary, $results->count()];
+        return new ChunkOutcome($summary, $results->count());
     }
 
     /**
@@ -309,12 +296,15 @@ final readonly class ProcessChunkAction
     }
 
     /**
+     * The chunk's ledger rows in bulk, after one fresh read of the records it created (so undo can
+     * tell later edits apart), then the chunk counter — all inside the chunk transaction.
+     *
      * @param  array<string, int>  $counts
-     * @param  array<class-string<Model>, list<mixed>>  $created
+     * @param  list<WrittenRow>  $written
      */
-    private function complete(ImportBatch $claimed, ImportSession $session, ImportDefinition $importer, Model $owner, int $index, array $counts, array $created): ImportSummary
+    private function complete(ImportBatch $claimed, ImportSession $session, ImportDefinition $importer, Model $owner, int $index, array $counts, array $written): ImportSummary
     {
-        $this->checksums($claimed, $importer, $owner, $created);
+        LedgerWriter::insert($claimed, $owner, $written, $this->fresh($importer, $owner, $written), static fn (Model $record): string => Checksums::of($importer->checksumAttributes($record)));
 
         $total = $claimed->counts;
 
@@ -329,20 +319,16 @@ final readonly class ProcessChunkAction
     }
 
     /**
-     * One row in its own savepoint: the host callback, the ownership/connection checks and the
-     * ledger row. Null = already ledgered (defence in depth: the claim excludes it).
+     * One row in its own savepoint: the host callback and the ownership/connection/key checks. Its
+     * ledger row is written with the chunk's (the claim excludes a second run; the unique
+     * `(batch_id, row_number)` index stays the backstop). Null = the row failed.
      *
      * @param  Closure(): Model  $callback
-     * @return array{0: RecordAction|'failed', 1: Model|null}|null
      */
-    private function write(Connection $connection, ImportBatch $batch, ImportSession $session, Model $owner, ImportDefinition $importer, int $number, Closure $callback, bool $update, ?string $contentHash): ?array
+    private function write(Connection $connection, ImportSession $session, Model $owner, ImportDefinition $importer, int $number, Closure $callback, bool $update, ?string $contentHash): ?WrittenRow
     {
         try {
-            return $connection->transaction(function () use ($batch, $session, $owner, $importer, $number, $callback, $update, $contentHash, $connection): ?array {
-                if (ImportModels::record()::query()->where('batch_id', $batch->getKey())->where('row_number', $number)->exists()) {
-                    return null;
-                }
-
+            return $connection->transaction(function () use ($session, $owner, $importer, $number, $callback, $update, $contentHash, $connection): WrittenRow {
                 $record = $callback();
 
                 if (! $record->exists) {
@@ -365,18 +351,7 @@ final readonly class ProcessChunkAction
                     default => RecordAction::Linked,
                 };
 
-                ImportModels::record()::query()->create([
-                    'batch_id' => $batch->getKey(),
-                    'session_id' => $session->getKey(),
-                    'row_number' => $number,
-                    'record_type' => $record->getMorphClass(),
-                    'record_id' => $record->getKey(),
-                    'action' => $action,
-                    'owner_digest' => Digests::owner($owner),
-                    'content_hash' => $contentHash,
-                ]);
-
-                return [$action, $record];
+                return new WrittenRow($number, $action, $record, $contentHash);
             });
         } catch (Throwable $exception) {
             if (Failures::isInfrastructure($exception)) {
@@ -394,20 +369,20 @@ final readonly class ProcessChunkAction
                 report($exception);
             }
 
-            $this->failRow($session, $number, [['field' => null, 'column' => null, 'code' => $code, 'message' => $message, 'value' => null]]);
+            $this->failRow($session, $number, [CellError::row($code, $message)]);
 
-            return ['failed', null];
+            return null;
         }
     }
 
     /**
-     * @param  list<array{field: string|null, column: int|null, code: string, message: string, value: string|null}>  $errors
+     * @param  list<CellError>  $errors
      */
     private function failRow(ImportSession $session, int $number, array $errors): void
     {
         ImportModels::rowResult()::query()->updateOrCreate(
             ['session_id' => $session->getKey(), 'row_number' => $number],
-            ['status' => RowStatus::Failed, 'outcome' => null, 'errors' => $errors],
+            ['status' => RowStatus::Failed, 'outcome' => null, 'errors' => CellError::storedList($errors)],
         );
     }
 
@@ -437,27 +412,39 @@ final readonly class ProcessChunkAction
     }
 
     /**
-     * One fresh read of the created records, so undo can tell later edits apart.
+     * One fresh read of the created records through the owner query, per 500. A created record the
+     * owner query cannot see gets no checksum — undo then keeps it (`no_checksum`) — and is
+     * reported, because the importer's ownership and its create() disagree.
      *
-     * @param  array<class-string<Model>, list<mixed>>  $created
+     * @param  list<WrittenRow>  $written
+     * @return array<string, Model>
      */
-    private function checksums(ImportBatch $batch, ImportDefinition $importer, Model $owner, array $created): void
+    private function fresh(ImportDefinition $importer, Model $owner, array $written): array
     {
+        $created = [];
+
+        foreach ($written as $row) {
+            if ($row->action === RecordAction::Created) {
+                $created[$row->record::class][] = $row->record->getKey();
+            }
+        }
+
+        $fresh = [];
+
         foreach ($created as $class => $ids) {
             foreach (array_chunk($ids, 500) as $chunk) {
                 foreach (Scoped::query($class, $owner, $importer->ownership(), $this->scope, true)->whereKey($chunk)->get() as $record) {
-                    $updatedAt = $record->getUpdatedAtColumn() === null ? null : $record->getRawOriginal($record->getUpdatedAtColumn());
-
-                    ImportModels::record()::query()
-                        ->where('batch_id', $batch->getKey())
-                        ->where('record_type', $record->getMorphClass())
-                        ->where('record_id', $record->getKey())
-                        ->update([
-                            'checksum' => Checksums::of($importer->checksumAttributes($record)),
-                            'record_updated_at' => is_string($updatedAt) && $updatedAt !== '' ? Clock::format(new CarbonImmutable($updatedAt)) : null,
-                        ]);
+                    $fresh[LedgerWriter::key($record)] = $record;
                 }
             }
         }
+
+        foreach ($written as $row) {
+            if ($row->action === RecordAction::Created && ! isset($fresh[LedgerWriter::key($row->record)])) {
+                report(InvalidImporterDefinitionException::because($importer->key(), sprintf('row %d created a record its ownership query cannot see; undo will keep it', $row->number)));
+            }
+        }
+
+        return $fresh;
     }
 }

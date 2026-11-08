@@ -31,7 +31,6 @@ use RoundlyConsulting\Imports\Support\SessionRows;
 use RoundlyConsulting\Imports\Support\SessionState;
 use RoundlyConsulting\Imports\Support\TempFiles;
 use RoundlyConsulting\Imports\Templates\TemplateRows;
-use RoundlyConsulting\Imports\Xlsx\CellReference;
 
 /**
  * The preview's rows, filtered: stored exceptions come from the row-result table; plain creates
@@ -141,7 +140,7 @@ final readonly class RowQuery
         $errors = [];
 
         foreach ($row->errors ?? [] as $error) {
-            $errors[] = new CellError($error['field'], $error['column'], $error['column'] === null ? null : CellReference::letters($error['column']), $error['code'], $error['message'], $error['value']);
+            $errors[] = CellError::fromStored($error);
         }
 
         $match = null;
