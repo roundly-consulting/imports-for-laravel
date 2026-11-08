@@ -39,6 +39,34 @@ final class Scoped
             $query->withoutGlobalScope(SoftDeletingScope::class);
         }
 
-        return $scope->constrain($query, $owner, $rule);
+        return self::grouped($scope->constrain($query, $owner, $rule));
+    }
+
+    /**
+     * Wrap every where the owner scope added in one group, so a constraint written with `orWhere`
+     * stays a constraint: `(team_id = 1 or team_id = 0) and id = ?`, never
+     * `team_id = 1 or team_id = 0 and id = ?` — the latter matched a whole team on undo.
+     *
+     * @template TModel of Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
+     */
+    private static function grouped(Builder $query): Builder
+    {
+        $base = $query->getQuery();
+
+        if (count($base->wheres) < 2) {
+            return $query;
+        }
+
+        $nested = $base->forNestedWhere();
+        $nested->wheres = $base->wheres;
+        $nested->bindings['where'] = $base->bindings['where'];
+        $base->wheres = [];
+        $base->bindings['where'] = [];
+        $base->addNestedWhereQuery($nested);
+
+        return $query;
     }
 }

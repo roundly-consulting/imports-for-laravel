@@ -33,7 +33,10 @@ final class ExplicitOwnerScope implements OwnerScope
             'belongsTo' => $query->whereBelongsTo($owner, (string) $rule->name),
             'morph' => $query->where($model->qualifyColumn($rule->name.'_type'), $owner->getMorphClass())
                 ->where($model->qualifyColumn($rule->name.'_id'), $owner->getKey()),
-            'using' => $rule->query === null ? null : ($rule->query)($query, $owner),
+            // Nested: a host closure ending in `orWhere` must not swallow the caller's own wheres.
+            'using' => $rule->query === null ? null : $query->where(static function (Builder $nested) use ($rule, $owner): void {
+                ($rule->query)($nested, $owner);
+            }),
             'global' => null,
             default => throw UnscopedQueryException::forModel('?', $model::class, 'the rule is '.$rule->describe()),
         };
