@@ -3,10 +3,20 @@
 declare(strict_types=1);
 
 use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
+use RoundlyConsulting\Imports\Definition\Field;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
+use RoundlyConsulting\Imports\Pipeline\CellNormalizer;
+use RoundlyConsulting\Imports\Reading\Cell;
 use RoundlyConsulting\Imports\Support\Numbers;
 
 // claude.ai chat review 2026-11-08 — the value-pipeline findings (C-1, C-4, C-5, C-7, C-8, V-1).
+
+function chatCell(Field $field, Cell $cell, string $timezone = 'UTC'): mixed
+{
+    $result = CellNormalizer::forSession('en', $timezone)->normalize($field, $cell);
+
+    return $result->failed() ? 'error:'.$result->error : $result->value;
+}
 
 /**
  * The error codes of the first invalid row of a previewed session.
@@ -42,4 +52,18 @@ it('C-1: a preview of a cell like 1e9999999999 finishes and reports the cell', f
 
     expect($session->counts()->invalid)->toBe(1)
         ->and(chatErrorCodes($session))->toContain('invalid_number')->toContain('invalid_choice');
+});
+
+it('C-4: a choice value is matched as typed before it is read as a number', function (): void {
+    $region = Field::choice('region')->options(['01' => 'Bratislava', '02' => 'Trnava']);
+    $size = Field::choice('size')->options(['1.50' => ['en' => 'Large']]);
+    $code = Field::choice('code')->options(['1' => ['en' => 'One']]);
+
+    expect(chatCell($region, Cell::text('01')))->toBe('01')
+        ->and(chatCell($region, Cell::text('Bratislava')))->toBe('01')
+        ->and(chatCell($size, Cell::text('1.50')))->toBe('1.50')
+        ->and(chatCell($code, Cell::number('1')))->toBe('1')
+        ->and(chatCell($code, Cell::number('1.0')))->toBe('1')
+        ->and(chatCell($code, Cell::text('1.0')))->toBe('1')
+        ->and(chatCell($region, Cell::text('03')))->toBe('error:invalid_choice');
 });

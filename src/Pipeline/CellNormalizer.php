@@ -231,18 +231,23 @@ final class CellNormalizer
             return Coerced::error('invalid_choice', ['values' => implode(', ', array_keys($field->options))]);
         }
 
-        $needle = mb_strtolower(Numbers::plain((string) $value) ?? (string) $value);
+        // The value as typed first (`01`, `1.50` are codes), then as a number (`1.0` from a number
+        // cell) when that matched nothing.
+        $raw = mb_strtolower((string) $value);
+        $plain = Numbers::plain((string) $value);
 
-        foreach (array_keys($field->options) as $option) {
-            $option = (string) $option;
+        foreach (array_unique([$raw, $plain === null ? $raw : mb_strtolower($plain)]) as $needle) {
+            foreach (array_keys($field->options) as $option) {
+                $option = (string) $option;
 
-            if (mb_strtolower($option) === $needle) {
-                return Coerced::value($option);
-            }
-
-            foreach (Locales::matching($this->locale) as $locale) {
-                if (mb_strtolower($field->optionLabel($option, $locale)) === $needle) {
+                if (mb_strtolower($option) === $needle) {
                     return Coerced::value($option);
+                }
+
+                foreach (Locales::matching($this->locale) as $locale) {
+                    if (mb_strtolower($field->optionLabel($option, $locale)) === $needle) {
+                        return Coerced::value($option);
+                    }
                 }
             }
         }
