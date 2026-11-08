@@ -188,10 +188,85 @@ test('formula_cells_use_cached_values_and_never_evaluate', function (): void {
     expect(displayRows(Imports::read($path)))->toBe([2 => ['2']]);
 });
 
-test('an_xlsx_with_a_doctype_is_rejected', function (): void {
-    $path = XlsxBuilder::make(['S' => XlsxBuilder::row(1, ['&lol;'])], doctype: '<!DOCTYPE worksheet [<!ENTITY lol "lol"><!ENTITY xxe SYSTEM "file:///etc/hosts">]>');
+/**
+ * A valid workbook with a DOCTYPE (declaring an internal and an external entity) put into `$part`.
+ */
+function xlsxWithDoctypeIn(string $part): string
+{
+    $path = XlsxBuilder::make(['S' => XlsxBuilder::row(1, ['Name']).XlsxBuilder::row(2, ['Laptop'])], sharedStrings: ['x'], styles: '<numFmts count="0"/>');
+    $zip = new ZipArchive;
+    $zip->open($path);
+    $xml = (string) $zip->getFromName($part);
+    $root = (string) preg_replace('/^<\?xml[^>]*\?>\s*<([A-Za-z]+).*$/s', '$1', $xml);
+    $patched = (string) preg_replace('/\?>/', '?><!DOCTYPE '.$root.' [<!ENTITY lol "lol"><!ENTITY xxe SYSTEM "file:///etc/hosts">]>', $xml, 1);
+    expect($patched)->toContain('<!DOCTYPE '.$root.' [');
+    $zip->addFromString($part, $patched);
+    $zip->close();
 
-    expect(rejectionOf(fn () => Imports::read($path)->headers())->reason)->toBe(RejectionReason::MalformedSpreadsheet);
+    return $path;
+}
+
+test('an_xlsx_with_a_doctype_is_rejected', function (string $part): void {
+    $path = xlsxWithDoctypeIn($part);
+
+    expect(rejectionOf(function () use ($path): void {
+        $file = Imports::read($path);
+        $file->headers();
+        iterator_to_array($file->rows());
+    })->reason)->toBe(RejectionReason::MalformedSpreadsheet);
+})->with([
+    'package rels' => ['_rels/.rels'],
+    'workbook rels' => ['xl/_rels/workbook.xml.rels'],
+    'workbook' => ['xl/workbook.xml'],
+    'styles' => ['xl/styles.xml'],
+    'shared strings' => ['xl/sharedStrings.xml'],
+    'sheet' => ['xl/worksheets/sheet1.xml'],
+]);
+
+test('content_types_with_a_doctype_is_only_string_matched', function (): void {
+    // [Content_Types].xml is never parsed as XML (the detector string-matches it), so a DOCTYPE in
+    // it can declare nothing: the workbook reads as usual.
+    $path = xlsxWithDoctypeIn('[Content_Types].xml');
+
+    expect(displayRows(Imports::read($path)))->toBe([2 => ['Laptop']]);
+});
+
+test('an_external_entity_is_never_resolved', function (): void {
+    $secret = sys_get_temp_dir().'/imports-xxe-'.bin2hex(random_bytes(4)).'.txt';
+    file_put_contents($secret, 'TOP-SECRET-'.bin2hex(random_bytes(4)));
+    $marker = (string) file_get_contents($secret);
+    $path = XlsxBuilder::make(['S' => XlsxBuilder::row(1, ['&xxe;'])], doctype: '<!DOCTYPE worksheet [<!ENTITY xxe SYSTEM "file://'.$secret.'">]>');
+
+    $rejection = rejectionOf(function () use ($path, $marker): void {
+        $file = Imports::read($path);
+
+        foreach ([...$file->headers(), ...array_merge(...array_values(displayRows($file)))] as $value) {
+            expect((string) $value)->not->toContain($marker);
+        }
+    });
+
+    expect($rejection->reason)->toBe(RejectionReason::MalformedSpreadsheet)
+        ->and($rejection->getMessage())->not->toContain($marker);
+    @unlink($secret);
+});
+
+test('parts_that_together_inflate_past_max_inflated_are_rejected', function (): void {
+    $rows = XlsxBuilder::row(1, ['Name']);
+
+    for ($i = 2; $i < 300; $i++) {
+        $rows .= XlsxBuilder::row($i, ['Laptop number '.$i]);
+    }
+
+    $path = XlsxBuilder::make(['S' => $rows], sharedStrings: array_map(static fn (int $i): string => 'shared string number '.$i, range(1, 300)));
+    $zip = new ZipArchive;
+    $zip->open($path);
+    $sheet = strlen((string) $zip->getFromName('xl/worksheets/sheet1.xml'));
+    $strings = strlen((string) $zip->getFromName('xl/sharedStrings.xml'));
+    $zip->close();
+    // Each part fits the per-part cap; both together do not.
+    config()->set(['imports.xlsx.max_part_size' => max($sheet, $strings) + 1, 'imports.xlsx.max_inflated' => $sheet + $strings - 1]);
+
+    expect(rejectionOf(fn () => iterator_to_array(Imports::read($path)->rows()))->reason)->toBe(RejectionReason::ZipTooLarge);
 });
 
 test('a_lying_part_size_is_stopped_while_streaming', function (): void {
@@ -225,7 +300,7 @@ test('a_lying_part_size_is_stopped_while_streaming', function (): void {
 
     $rejection = rejectionOf(fn () => iterator_to_array(Imports::read($path)->rows()));
 
-    expect($rejection->reason)->toBeIn([RejectionReason::ZipTooLarge, RejectionReason::MalformedSpreadsheet]);
+    expect($rejection->reason)->toBe(RejectionReason::ZipTooLarge);
 });
 
 test('formatted_blank_tails_are_ignored', function (): void {

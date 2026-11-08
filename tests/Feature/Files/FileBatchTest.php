@@ -15,6 +15,8 @@ use RoundlyConsulting\Imports\Models\ImportRowResult;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
 use RoundlyConsulting\Imports\Tests\Support\ZipCrafter;
+use RoundlyConsulting\Imports\Zip\ByteBudget;
+use RoundlyConsulting\Imports\Zip\ZipGuard;
 use Workbench\App\Models\Document;
 use Workbench\App\Models\Team;
 
@@ -146,11 +148,68 @@ test('an_archive_over_the_size_limit_is_rejected', function (): void {
 });
 
 test('a_lying_entry_size_is_stopped_mid_stream', function (): void {
-    // Declares 10 bytes, inflates to 3 MB (> the importer's 2 MB per-file cap): only the
-    // streaming count can tell.
-    $path = ZipCrafter::lyingSize('big.txt', str_repeat('A', 3 * 1024 * 1024), 10);
+    // Declares 10 bytes in both headers (CHECKCONS passes), inflates to 3 MB of incompressible
+    // bytes (> the importer's 2 MB per-file cap, ratio ≈ 1): only the streaming count can tell.
+    $path = ZipCrafter::lyingSize('big.txt', random_bytes(3 * 1024 * 1024), 10);
 
-    expect(rejectedArchive(team(), $path))->toBeIn([RejectionReason::ZipEntryTooLarge, RejectionReason::ZipRatio, RejectionReason::ZipInconsistent]);
+    expect(rejectedArchive(team(), $path))->toBe(RejectionReason::ZipEntryTooLarge);
+});
+
+test('the_streaming_budget_is_what_stops_a_lying_entry', function (): void {
+    $zip = ZipGuard::open(ZipCrafter::lyingSize('big.txt', random_bytes(3 * 1024 * 1024), 10), RejectionReason::ZipInconsistent);
+    [$entry] = ZipGuard::inspectArchive($zip, 500, PHP_INT_MAX, 2 * 1024 * 1024, 100, 1024 * 1024, []);
+    $budget = new ByteBudget(2 * 1024 * 1024, PHP_INT_MAX, 100, 1024 * 1024);
+    $target = tempnam(sys_get_temp_dir(), 'imports-lying-');
+
+    expect($entry->size)->toBe(10)
+        ->and(fn () => ZipGuard::extract($zip, $entry, (string) $target, $budget))
+        ->toThrow(fn (ImportFileRejectedException $e) => expect($e->reason)->toBe(RejectionReason::ZipEntryTooLarge))
+        ->and($budget->exceeded)->toBeTrue()
+        ->and($budget->part)->toBeGreaterThan(2 * 1024 * 1024);
+
+    $zip->close();
+    @unlink((string) $target);
+});
+
+test('a_zip_bomb_with_honest_small_entries_is_stopped_by_the_running_total', function (): void {
+    config()->set('imports.files.max_uncompressed', 3 * 1024 * 1024);
+    $entries = [];
+
+    foreach (range(1, 5) as $i) {
+        $entries['part'.$i.'.txt'] = str_repeat("\0", 900 * 1024);   // each under the per-file cap and the ratio minimum
+    }
+
+    expect(rejectedArchive(team(), ZipCrafter::make($entries)))->toBe(RejectionReason::ZipTooLarge);
+});
+
+test('a_symlink_named_like_a_directory_is_rejected', function (): void {
+    expect(rejectedArchive(team(), ZipCrafter::symlink('docs/', '/etc')))->toBe(RejectionReason::ZipSymlink);
+});
+
+test('nothing_from_a_rejected_archive_remains_on_the_disk', function (Closure $archive, RejectionReason $reason): void {
+    // rejectedArchive() asserts the disk is empty and no session exists after the rejection.
+    expect(rejectedArchive(team(), $archive()))->toBe($reason);
+})->with([
+    'unsafe path after a good file' => [fn () => ZipCrafter::make(['ok.txt' => 'fine', '../evil.txt' => 'x']), RejectionReason::ZipUnsafePath],
+    'symlink after a good file' => [fn () => ZipCrafter::symlink('link.txt', '/etc/passwd'), RejectionReason::ZipSymlink],
+    'lying size' => [fn () => ZipCrafter::lyingSize('big.txt', random_bytes(3 * 1024 * 1024), 10), RejectionReason::ZipEntryTooLarge],
+    'encrypted' => [fn () => ZipCrafter::encrypted(), RejectionReason::ZipEncrypted],
+    'running total' => [function () {
+        config()->set('imports.files.max_uncompressed', 4096);
+
+        return ZipCrafter::make(['a.txt' => random_bytes(3000), 'b.txt' => random_bytes(3000)]);
+    }, RejectionReason::ZipTooLarge],
+]);
+
+test('an_entry_name_in_cp437_is_stored_as_valid_utf8', function (): void {
+    $team = team();
+    // A Windows-era archive: no UTF-8 flag, the name in code page 437 (0x81 is ü).
+    $path = ZipCrafter::make([], static function (ZipArchive $zip): void {
+        $zip->addFromString("Gr\x81n.pdf", '%PDF-1.4 x', ZipArchive::FL_ENC_CP437);
+    });
+    $session = uploadDocuments($team, zipUpload($path));
+
+    expect(ImportRowResult::query()->where('session_id', $session->id())->value('label'))->toBe('Grün.pdf');
 });
 
 test('an_absolute_entry_path_is_rejected', function (string $name): void {

@@ -61,6 +61,69 @@ final class LongListImporter extends Importer
     }
 }
 
+final class FormulaExamplesImporter extends Importer
+{
+    public static string $example = '';
+
+    public function key(): string
+    {
+        return 'formula-examples';
+    }
+
+    public function label(): string
+    {
+        return 'Formula examples';
+    }
+
+    public function model(): string
+    {
+        return Asset::class;
+    }
+
+    public function ownership(): Ownership
+    {
+        return Ownership::column('team_id');
+    }
+
+    public function fields(): array
+    {
+        return [Field::text('name')->required()->example(self::$example)->label(self::$example)];
+    }
+
+    public function authorize(?Authenticatable $user, Model $owner, ImportOperation $operation): bool
+    {
+        return true;
+    }
+
+    public function create(ImportRow $row, ImportContext $context): Model
+    {
+        return new Asset;
+    }
+}
+
+/**
+ * Every cell of a CSV file.
+ *
+ * @return list<string>
+ */
+function csvCells(string $contents): array
+{
+    $handle = fopen('php://memory', 'w+b');
+    fwrite($handle, str_starts_with($contents, "\u{FEFF}") ? substr($contents, 3) : $contents);
+    rewind($handle);
+    $cells = [];
+
+    while (($row = fgetcsv($handle, null, ',', '"', '')) !== false) {
+        foreach ($row as $cell) {
+            $cells[] = (string) $cell;
+        }
+    }
+
+    fclose($handle);
+
+    return $cells;
+}
+
 function zipPart(string $path, string $part): string
 {
     $zip = new ZipArchive;
@@ -211,4 +274,49 @@ test('a_template_can_be_stored_on_a_disk', function (): void {
 
     expect(Storage::disk('imports')->exists($path))->toBeTrue()
         ->and(Imports::importer('assets')->template(TemplateFormat::Csv)->filename)->toBe('assets.csv');
+});
+
+test('csv_output_neutralises_every_formula_trigger', function (string $payload): void {
+    FormulaExamplesImporter::$example = $payload;
+    Imports::register(FormulaExamplesImporter::class);
+    $team = team();
+    $rows = assetRows(1);
+    $rows[0][0] = $payload;   // the asset tag
+    $rows[0][2] = '';         // no name: the row fails and lands in the error report
+
+    $outputs = [
+        'template' => Imports::template('formula-examples', TemplateFormat::Csv)->contents(),
+        'error report' => uploadAssets($team, admin($team), assetsCsv($rows))->preview()->errorReport(TemplateFormat::Csv)->contents(),
+    ];
+
+    foreach ($outputs as $where => $contents) {
+        $carrying = array_values(array_filter(csvCells($contents), static fn (string $cell): bool => str_contains($cell, ltrim($payload, "\t\r"))));
+
+        expect($carrying)->not->toBeEmpty($where.' does not carry the payload');
+
+        foreach ($carrying as $cell) {
+            expect($cell)->toStartWith("'");
+        }
+    }
+})->with([
+    'equals' => ['=1+1'],
+    'dde' => ["+cmd|' /C calc'!A0"],
+    'minus' => ['-2+3'],
+    'at' => ['@SUM(A1)'],
+    'tab' => ["\t=1"],
+    'carriage return' => ["\r=1"],
+    'hyperlink' => ['=HYPERLINK("http://x")'],
+]);
+
+test('an_xlsx_error_report_contains_no_formula_element', function (): void {
+    $team = team();
+    $rows = assetRows(2);
+    $rows[0][0] = '=HYPERLINK("http://evil","x")';
+    $rows[0][2] = '';
+
+    $path = uploadAssets($team, admin($team), assetsCsv($rows))->preview()->errorReport(TemplateFormat::Xlsx)->toTemporaryFile();
+    $sheet = zipPart($path, 'xl/worksheets/sheet1.xml');
+
+    expect($sheet)->toContain('=HYPERLINK(&quot;http://evil&quot;,&quot;x&quot;)')
+        ->not->toContain('<f>')->not->toContain('<f ');
 });

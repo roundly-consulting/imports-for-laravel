@@ -340,10 +340,11 @@ test('an_import_never_writes_outside_its_owner_context_rollback', function (): v
 
 test('a_zip_bomb_is_rejected', function (): void {
     $team = team();
-    $bomb = ZipCrafter::bomb(5 * 1024 * 1024);
+    // 1.5 MB of zeros: under the 2 MB per-file cap, over the 1 MB ratio minimum, ratio ≈ 1,000.
+    $bomb = ZipCrafter::bomb((int) (1.5 * 1024 * 1024));
 
     expect(fn () => Imports::for($team)->by(admin($team))->uploadFiles('documents', SpreadsheetFactory::file('bomb.zip', (string) file_get_contents($bomb))))
-        ->toThrow(fn (ImportFileRejectedException $e) => expect($e->reason)->toBeIn([RejectionReason::ZipRatio, RejectionReason::ZipEntryTooLarge]));
+        ->toThrow(fn (ImportFileRejectedException $e) => expect($e->reason)->toBe(RejectionReason::ZipRatio));
 
     expect(ImportSession::query()->withTrashed()->count())->toBe(0);
 });
@@ -354,4 +355,21 @@ test('a_path_traversal_archive_is_rejected', function (): void {
 
     expect(fn () => Imports::for($team)->by(admin($team))->uploadFiles('documents', SpreadsheetFactory::file('evil.zip', (string) file_get_contents($zip))))
         ->toThrow(fn (ImportFileRejectedException $e) => expect($e->reason)->toBe(RejectionReason::ZipUnsafePath));
+});
+
+test('a_reference_resolves_only_inside_the_owner_even_with_identical_values', function (): void {
+    $mine = team();
+    $theirs = team();
+    $their = VendorFactory::new()->create(['team_id' => $theirs->id, 'name' => 'Lenovo', 'vat_id' => 'SK1']);
+    $my = VendorFactory::new()->create(['team_id' => $mine->id, 'name' => 'Lenovo', 'vat_id' => 'SK1']);
+    $rows = assetRows(1);
+    $rows[0][7] = 'SK1';
+
+    $session = uploadAssets($mine, admin($mine), assetsCsv($rows))->preview();
+
+    expect($session->counts()->valid)->toBe(1);
+
+    $session->commit();
+
+    expect(Asset::query()->sole()->vendor_id)->toBe($my->id)->not->toBe($their->id);
 });

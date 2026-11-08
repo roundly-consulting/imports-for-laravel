@@ -301,3 +301,20 @@ test('a_progressing_validation_is_left_alone', function (): void {
 
     expect($session->status())->toBe(SessionStatus::Previewed);
 });
+
+test('sweep_leaves_a_progressing_commit_alone', function (): void {
+    config()->set(['imports.queue.connection' => 'database', 'imports.commit.chunk_size' => 1]);
+    $team = team();
+    $batch = uploadAssets($team, admin($team), assetsCsv(assetRows(3)))->preview()->commit();
+
+    // Stale progress (past stale_after) but within abandon_after, the job batch alive with its jobs queued.
+    CarbonImmutable::setTestNow(now()->addHours(2));
+
+    expect(Imports::sweep()->failedCommits)->toBe(0)
+        ->and($batch->model()->refresh()->status)->toBe(BatchStatus::Running);
+
+    drainQueue();
+
+    expect($batch->model()->refresh()->status)->toBe(BatchStatus::Completed)
+        ->and(Asset::query()->count())->toBe(3);
+});
