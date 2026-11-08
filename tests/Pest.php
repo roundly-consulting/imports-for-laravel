@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
+use RoundlyConsulting\Imports\Tests\KeyTypes\KeyTypesTestCase;
 use RoundlyConsulting\Imports\Tests\TestCase;
 use Workbench\App\Hooks;
 use Workbench\App\Models\Team;
@@ -16,13 +17,14 @@ use Workbench\App\Models\User;
 use Workbench\Database\Factories\TeamFactory;
 use Workbench\Database\Factories\UserFactory;
 
-uses(TestCase::class)
-    ->beforeEach(function (): void {
-        Storage::fake('imports');
-        Storage::fake('documents');
-        Hooks::reset();
-    })
-    ->in(__DIR__);
+$fresh = function (): void {
+    Storage::fake('imports');
+    Storage::fake('documents');
+    Hooks::reset();
+};
+
+uses(TestCase::class)->beforeEach($fresh)->in('Acceptance', 'Arch', 'Feature', 'Http', 'Memory', 'RealEngine', 'Teams');
+uses(KeyTypesTestCase::class)->beforeEach($fresh)->in('KeyTypes');
 
 /**
  * Run the database queue worker like a supervisor would: a fresh worker whenever one stops
