@@ -8,6 +8,7 @@ use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
 use RoundlyConsulting\Imports\Tests\TestCase;
+use Workbench\App\Hooks;
 use Workbench\App\Models\Team;
 use Workbench\App\Models\User;
 use Workbench\Database\Factories\TeamFactory;
@@ -17,6 +18,7 @@ uses(TestCase::class)
     ->beforeEach(function (): void {
         Storage::fake('imports');
         Storage::fake('documents');
+        Hooks::reset();
     })
     ->in(__DIR__);
 

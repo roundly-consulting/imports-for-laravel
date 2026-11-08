@@ -14,6 +14,7 @@ use RoundlyConsulting\Imports\Enums\ImportOperation;
 use RoundlyConsulting\Imports\Importer;
 use RoundlyConsulting\Imports\Rows\ImportContext;
 use RoundlyConsulting\Imports\Rows\ImportRow;
+use Workbench\App\Hooks;
 use Workbench\App\Models\Asset;
 use Workbench\App\Models\User;
 use Workbench\App\Models\Vendor;
@@ -78,6 +79,8 @@ final class AssetsImporter extends Importer
 
     public function create(ImportRow $row, ImportContext $context): Model
     {
+        Hooks::call('create', $row->number());
+
         return Asset::create([
             ...$row->except('vendor', 'assignee'),
             'vendor_id' => $row->reference('vendor')?->getKey(),
@@ -88,6 +91,8 @@ final class AssetsImporter extends Importer
 
     public function update(Model $record, ImportRow $row, ImportContext $context): Model
     {
+        Hooks::call('update', $row->number());
+
         $record->fill([
             ...$row->except('vendor', 'assignee'),
             'vendor_id' => $row->reference('vendor')?->getKey() ?? $record->getAttribute('vendor_id'),

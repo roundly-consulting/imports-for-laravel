@@ -14,6 +14,7 @@ use RoundlyConsulting\Imports\Enums\RollbackOutcome;
 use RoundlyConsulting\Imports\Importer;
 use RoundlyConsulting\Imports\Rows\ImportContext;
 use RoundlyConsulting\Imports\Rows\ImportRow;
+use Workbench\App\Hooks;
 use Workbench\App\Invitations;
 use Workbench\App\Models\Invitation;
 use Workbench\App\Models\User;
@@ -70,6 +71,8 @@ final class PeopleImporter extends Importer
 
     public function create(ImportRow $row, ImportContext $context): Model
     {
+        Hooks::call('create', $row->number());
+
         $email = $row->get('email');
         $role = $row->get('role');
         $first = $row->get('first_name');
@@ -86,6 +89,8 @@ final class PeopleImporter extends Importer
 
     public function update(Model $record, ImportRow $row, ImportContext $context): Model
     {
+        Hooks::call('update', $row->number());
+
         if ($record->getAttribute('status') === 'pending') {
             $record->forceFill(['role' => $row->get('role')])->save();
         }
@@ -95,6 +100,8 @@ final class PeopleImporter extends Importer
 
     public function rollback(Model $record, ImportContext $context): RollbackOutcome
     {
+        Hooks::call('rollback', 0);
+
         if (! $record instanceof Invitation || $record->status === 'accepted') {
             return RollbackOutcome::Kept;
         }

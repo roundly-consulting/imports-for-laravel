@@ -205,7 +205,11 @@ final class CellNormalizer
             : [...$this->dateFormats, ...$field->formats];
 
         foreach ($formats as $format) {
-            $date = CarbonImmutable::createFromFormat('!'.$format, $value, $this->timezone);
+            try {
+                $date = CarbonImmutable::createFromFormat('!'.$format, $value, $this->timezone);
+            } catch (Throwable) {
+                continue;     // Carbon throws where PHP returns false: not this format
+            }
 
             // A round trip refuses what PHP would silently roll over (31.02.2026 → 03.03.2026).
             if ($date instanceof CarbonImmutable && $date->format($format) === $value) {
