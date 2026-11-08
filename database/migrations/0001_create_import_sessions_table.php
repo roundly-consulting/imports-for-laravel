@@ -39,6 +39,7 @@ return new class extends Migration
             $blueprint->string('delimiter_source', 8)->nullable();
             $blueprint->string('sheet', 31)->nullable();
             $blueprint->json('sheets')->nullable();
+            $blueprint->boolean('date1904')->default(false);
             $blueprint->unsignedInteger('header_row')->default(1);
             $blueprint->json('headers');
             $blueprint->json('mapping')->nullable();

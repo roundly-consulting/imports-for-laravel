@@ -38,11 +38,16 @@ final class CellNormalizer
         private readonly int $cellLength,
         private readonly array $dateFormats,
         private readonly array $datetimeFormats,
+        private readonly bool $date1904 = false,
     ) {}
 
-    public static function forSession(string $locale, string $timezone): self
+    /**
+     * @param  bool  $date1904  the workbook's date system: a plain number mapped to a date field is
+     *                          a serial of that system
+     */
+    public static function forSession(string $locale, string $timezone, bool $date1904 = false): self
     {
-        return new self($locale, $timezone, ImportsConfig::cellLength(), ImportsConfig::dateFormats(), ImportsConfig::datetimeFormats());
+        return new self($locale, $timezone, ImportsConfig::cellLength(), ImportsConfig::dateFormats(), ImportsConfig::datetimeFormats(), $date1904);
     }
 
     public function normalize(Field $field, ?Cell $cell): Coerced
@@ -189,7 +194,7 @@ final class CellNormalizer
                 return Coerced::error($withTime ? 'invalid_datetime' : 'invalid_date');
             }
 
-            $date = SerialDate::toDate((string) $value, false, $this->timezone);
+            $date = SerialDate::toDate((string) $value, $this->date1904, $this->timezone);
 
             return $date === null
                 ? Coerced::error($withTime ? 'invalid_datetime' : 'invalid_date')

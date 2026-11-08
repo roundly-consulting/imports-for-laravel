@@ -66,6 +66,7 @@ final readonly class ConfigureSourceAction
                 'delimiter' => $file->delimiter(),
                 'delimiter_source' => $delimiter !== null ? DelimiterSource::Override : $file->delimiterSource(),
                 'header_row' => $file->headerRow(),
+                'date1904' => $file->date1904(),
                 'headers' => $headers,
                 'data_rows' => $dataRows,
             ]);

@@ -56,6 +56,14 @@ final class XlsxReader implements RowSource
         return $this->workbook->sheetInfos();
     }
 
+    /**
+     * Whether the workbook counts dates from 1904 (old Mac Excel) instead of 1900.
+     */
+    public function date1904(): bool
+    {
+        return $this->workbook->date1904;
+    }
+
     public function sheetName(): string
     {
         return $this->sheet->name;

@@ -153,7 +153,7 @@ final readonly class ProcessChunkAction
                 }
             }
 
-            $pipeline = new RowPipeline($importer, SessionState::mapping($session)->toArray(), count($session->headers), $owner, $this->scope, $session->locale, $session->timezone, $this->validation);
+            $pipeline = new RowPipeline($importer, SessionState::mapping($session)->toArray(), count($session->headers), $owner, $this->scope, $session->locale, $session->timezone, $this->validation, $session->date1904);
             $context = new ImportContext($owner, Audits::committer($batch), $importer, Keys::of($session), Keys::of($batch), $session->mode, $session->locale, $session->timezone, $this->scope);
             $written = [];
 

@@ -38,12 +38,14 @@ final class SerialDate
             $seconds -= 86400;
         }
 
+        // Counted in UTC (no DST jumps), then the same wall clock is labelled with $timezone: adding
+        // the time of day as elapsed seconds to local midnight put noon at 13:00 on a DST day.
         $epoch = match (true) {
-            $date1904 => CarbonImmutable::create(1904, 1, 1, 0, 0, 0, $timezone),
-            $days < 60 => CarbonImmutable::create(1899, 12, 31, 0, 0, 0, $timezone),
-            default => CarbonImmutable::create(1899, 12, 30, 0, 0, 0, $timezone),
+            $date1904 => CarbonImmutable::create(1904, 1, 1, 0, 0, 0, 'UTC'),
+            $days < 60 => CarbonImmutable::create(1899, 12, 31, 0, 0, 0, 'UTC'),
+            default => CarbonImmutable::create(1899, 12, 30, 0, 0, 0, 'UTC'),
         };
 
-        return $epoch?->addDays($days)->addSeconds($seconds);
+        return $epoch?->addDays($days)->addSeconds($seconds)->shiftTimezone($timezone);
     }
 }

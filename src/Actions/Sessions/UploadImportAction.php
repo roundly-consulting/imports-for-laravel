@@ -105,6 +105,7 @@ final readonly class UploadImportAction
                 'sheet' => $file->sheet(),
                 'sheets' => array_map(static fn ($sheet): array => ['name' => $sheet->name, 'index' => $sheet->index, 'visible' => $sheet->visible], $file->sheets()),
                 'header_row' => $file->headerRow(),
+                'date1904' => $file->date1904(),
                 'headers' => $headers,
                 'mode' => $importer->defaultMode(),
                 'locale' => $locale,

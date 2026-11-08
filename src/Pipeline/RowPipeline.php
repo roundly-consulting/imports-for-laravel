@@ -63,9 +63,10 @@ final class RowPipeline
         private readonly string $locale,
         string $timezone,
         private readonly ValidationFactory $validation,
+        bool $date1904 = false,
     ) {
         $this->columns = $mapping;
-        $this->normalizer = CellNormalizer::forSession($locale, $timezone);
+        $this->normalizer = CellNormalizer::forSession($locale, $timezone, $date1904);
 
         foreach ($importer->fields() as $field) {
             $this->fields[$field->name] = $field;

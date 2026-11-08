@@ -85,6 +85,14 @@ final class SpreadsheetFile
         return $this->xlsx?->sheets() ?? [];
     }
 
+    /**
+     * Whether date serials in this file count from 1904 (an XLSX setting; CSV is always 1900).
+     */
+    public function date1904(): bool
+    {
+        return $this->xlsx?->date1904() ?? false;
+    }
+
     public function sheet(): ?string
     {
         return $this->xlsx?->sheetName();

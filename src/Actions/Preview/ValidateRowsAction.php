@@ -89,7 +89,7 @@ final readonly class ValidateRowsAction
     {
         $importer = $this->registry->rows($session->importer);
         $mapping = SessionState::mapping($session)->toArray();
-        $pipeline = new RowPipeline($importer, $mapping, count($session->headers), $owner, $this->scope, $session->locale, $session->timezone, $this->validation);
+        $pipeline = new RowPipeline($importer, $mapping, count($session->headers), $owner, $this->scope, $session->locale, $session->timezone, $this->validation, $session->date1904);
         $chunkSize = max(ImportsConfig::chunkSize(), (int) ceil(max(1, $session->data_rows) / ImportsConfig::maxChunks()));
         $window = ImportsConfig::previewWindow();
         $progressEvery = ImportsConfig::progressEvery();

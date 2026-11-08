@@ -51,6 +51,7 @@ use RoundlyConsulting\Imports\Support\ImportsConfig;
  * @property string|null $sheet
  * @property list<array{name: string, index: int, visible: bool}>|null $sheets
  * @property int $header_row
+ * @property bool $date1904
  * @property list<string|null> $headers
  * @property array<int|string, string>|null $mapping
  * @property MappingSource|null $mapping_source
@@ -163,6 +164,7 @@ class ImportSession extends Model
             'failure' => 'array',
             'file_size' => 'integer',
             'header_row' => 'integer',
+            'date1904' => 'boolean',
             'data_rows' => 'integer',
             'processed_rows' => 'integer',
             'progress' => 'integer',
