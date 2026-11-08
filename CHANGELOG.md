@@ -6,6 +6,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 
 ## Unreleased
 
+### Fixed
+
+- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
+
 ## 1.0.0 - 2026-11-08
 
 Initial public release.

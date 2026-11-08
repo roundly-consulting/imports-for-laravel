@@ -13,7 +13,14 @@ namespace RoundlyConsulting\Imports\Support;
 final class Numbers
 {
     /**
-     * A numeric string in plain notation: `1.2345E+3` → `1234.5`, `5.0` → `5`, `-0` → `0`.
+     * The largest exponent `plain()` expands. Every float prints within it (`1.79…E+308`,
+     * `4.94…E-324`); a cell like `1e999999999` would otherwise become a gigabyte of zeros.
+     */
+    public const int MAX_EXPONENT = 400;
+
+    /**
+     * A numeric string in plain notation: `1.2345E+3` → `1234.5`, `5.0` → `5`, `-0` → `0`. Null
+     * when it is not a number, or its exponent is beyond ±`MAX_EXPONENT`.
      */
     public static function plain(string $number): ?string
     {
@@ -26,7 +33,13 @@ final class Numbers
         $sign = $match[1] === '-' ? '-' : '';
         $integer = $match[2];
         $fraction = $match[3] ?? '';
-        $exponent = isset($match[4]) ? (int) $match[4] : 0;
+        // An exponent past PHP_INT_MAX saturates the cast, which is still out of bounds.
+        $exponent = (int) ($match[4] ?? 0);
+
+        if (abs($exponent) > self::MAX_EXPONENT) {
+            return null;
+        }
+
         $digits = $integer.$fraction;
         $point = strlen($integer) + $exponent;
 
