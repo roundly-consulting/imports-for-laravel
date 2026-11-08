@@ -17,5 +17,6 @@ return [
     'yes' => 'Yes',
     'no' => 'No',
     'errors' => 'Errors',
+    'file' => 'File',
     'column' => 'Column :column',
 ];

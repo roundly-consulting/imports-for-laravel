@@ -235,11 +235,12 @@ final readonly class SessionHandle
     }
 
     /**
-     * The failing rows plus an "Errors" column, ready to fix and re-upload.
+     * The failing rows plus an "Errors" column, ready to fix and re-upload (a file batch: one row
+     * per refused file). `$locale` sets the report's own labels; messages stay in the session's.
      */
-    public function errorReport(TemplateFormat $format = TemplateFormat::Xlsx): Template
+    public function errorReport(TemplateFormat $format = TemplateFormat::Xlsx, ?string $locale = null): Template
     {
-        return $this->manager->perform('errorReport', BuildErrorReportAction::class, fn (BuildErrorReportAction $action): Template => $action->execute($this->session, $format, $this->actor), ['session' => $this->session, 'format' => $format])
+        return $this->manager->perform('errorReport', BuildErrorReportAction::class, fn (BuildErrorReportAction $action): Template => $action->execute($this->session, $format, $this->actor, $locale), ['session' => $this->session, 'format' => $format, 'locale' => $locale])
             ?? throw new LogicException('The error report was not built.');
     }
 

@@ -64,8 +64,9 @@ final class PreviewController extends Controller
     public function errorReport(TemplateRequest $request, string $session): StreamedResponse
     {
         $format = $request->validated('format');
+        $locale = $request->validated('locale');
 
-        return $this->scoped($request)->session($session)->errorReport(is_string($format) ? TemplateFormat::from($format) : TemplateFormat::Xlsx)->download();
+        return $this->scoped($request)->session($session)->errorReport(is_string($format) ? TemplateFormat::from($format) : TemplateFormat::Xlsx, is_string($locale) ? $locale : null)->download();
     }
 
     public function commit(Request $request, string $session): JsonResponse

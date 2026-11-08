@@ -17,5 +17,6 @@ return [
     'yes' => 'Áno',
     'no' => 'Nie',
     'errors' => 'Chyby',
+    'file' => 'Súbor',
     'column' => 'Stĺpec :column',
 ];

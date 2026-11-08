@@ -27,3 +27,24 @@ it('O-8: a malformed id in a route is a 404', function (): void {
     $this->getJson('/api/imports/sessions/abc')->assertNotFound();
     $this->getJson('/api/imports/batches/abc')->assertNotFound();
 });
+
+it('O-12: the error report endpoint renders its labels in the requested locale', function (): void {
+    $team = team();
+    $this->actingAs(admin($team));
+    $rows = assetRows(2);
+    $rows[1][2] = '';
+    $id = $this->post('/api/imports/importers/assets/sessions', ['file' => assetsCsv($rows)], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+    $this->postJson("/api/imports/sessions/{$id}/preview")->assertSuccessful();
+
+    expect($this->get("/api/imports/sessions/{$id}/error-report?format=csv&locale=sk")->assertOk()->streamedContent())->toContain(',Chyby')
+        ->and($this->get("/api/imports/sessions/{$id}/error-report?format=csv")->assertOk()->streamedContent())->toContain(',Errors');
+});
+
+it('F-8: the error report of a file batch downloads over the API', function (): void {
+    $team = team();
+    $this->actingAs(admin($team));
+    $id = $this->post('/api/imports/importers/documents/file-sessions', ['files' => [SpreadsheetFactory::file('a.exe', 'x'), SpreadsheetFactory::file('b.pdf', 'y')]], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+    $this->postJson("/api/imports/sessions/{$id}/preview")->assertSuccessful();
+
+    expect($this->get("/api/imports/sessions/{$id}/error-report?format=csv")->assertOk()->streamedContent())->toContain('a.exe');
+});

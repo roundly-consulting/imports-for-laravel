@@ -81,15 +81,17 @@ final class SessionState
     }
 
     /**
+     * The headers as shown: an unnamed column reads "Column C" in `$locale` (default: the session's).
+     *
      * @return list<string>
      */
-    public static function displayHeaders(ImportSession $session): array
+    public static function displayHeaders(ImportSession $session, ?string $locale = null): array
     {
         $display = [];
 
         foreach ($session->headers as $index => $header) {
             $display[] = $header === null || $header === ''
-                ? Locales::line('imports::templates.column', ['column' => CellReference::letters($index)], $session->locale)
+                ? Locales::line('imports::templates.column', ['column' => CellReference::letters($index)], $locale ?? $session->locale)
                 : $header;
         }
 
