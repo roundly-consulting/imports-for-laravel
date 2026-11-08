@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Imports\Actions\Preview;
 
 use Illuminate\Support\Facades\Event;
+use RoundlyConsulting\Imports\Contracts\OwnerScope;
 use RoundlyConsulting\Imports\DataTransferObjects\ImportCounts;
 use RoundlyConsulting\Imports\Enums\RowOutcome;
 use RoundlyConsulting\Imports\Enums\RowStatus;
@@ -28,12 +29,15 @@ use RoundlyConsulting\Imports\Support\Locales;
  */
 final readonly class PreviewFilesAction
 {
+    public function __construct(private OwnerScope $scope) {}
+
     public function execute(ImportSession $session, FileImporter $importer): void
     {
         $owner = Audits::owner($session);
         $results = ImportModels::rowResult()::query()->where('session_id', $session->getKey())->orderBy('row_number')->get();
         $hashes = array_values(array_filter($results->where('status', '!=', RowStatus::Invalid)->pluck('content_hash')->all(), 'is_string'));
-        $earlier = FileDuplicateCheck::earlier($importer, $owner, $hashes, Keys::of($session));
+        // A FileDuplicates::using() callback reads host models: only inside the owner.
+        $earlier = $this->scope->run($owner, static fn (): array => FileDuplicateCheck::earlier($importer, $owner, $hashes, Keys::of($session)));
         $seen = [];
         $counts = ['valid' => 0, 'invalid' => 0, 'in_file' => 0, 'matched' => 0];
 

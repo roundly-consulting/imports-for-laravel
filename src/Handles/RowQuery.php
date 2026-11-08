@@ -264,14 +264,21 @@ final readonly class RowQuery
         try {
             $numbers = array_fill_keys(array_map(static fn (RowResult $r): int => $r->rowNumber, $results), true);
             $rows = iterator_to_array(SessionRows::pick($this->session, $numbers, $temp, $importer->limits()->columns), true);
-            $pipeline = new RowPipeline($importer, SessionState::mapping($this->session)->toArray(), count($this->session->headers), $owner, $container->make(OwnerScope::class), $this->session->locale, $this->session->timezone, $container->make(ValidationFactory::class), $this->session->date1904);
-            $changes = [];
+            $scope = $container->make(OwnerScope::class);
+            $pipeline = new RowPipeline($importer, SessionState::mapping($this->session)->toArray(), count($this->session->headers), $owner, $scope, $this->session->locale, $this->session->timezone, $container->make(ValidationFactory::class), $this->session->date1904);
 
-            foreach ($pipeline->evaluate($rows, new InFileKeys) as $evaluation) {
-                if ($evaluation->row !== null && $evaluation->match !== null) {
-                    $changes[$evaluation->number] = $importer->diff($evaluation->match, $evaluation->row);
+            // References, natural-key matches and diff() read host models: only inside the owner.
+            $changes = $scope->run($owner, static function () use ($pipeline, $rows, $importer): array {
+                $changes = [];
+
+                foreach ($pipeline->evaluate($rows, new InFileKeys) as $evaluation) {
+                    if ($evaluation->row !== null && $evaluation->match !== null) {
+                        $changes[$evaluation->number] = $importer->diff($evaluation->match, $evaluation->row);
+                    }
                 }
-            }
+
+                return $changes;
+            });
         } finally {
             TempFiles::remove($temp);
         }
