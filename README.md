@@ -37,15 +37,12 @@ use App\Models\Vendor;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Imports\Definition\{Field, NaturalKey, Ownership};
-use RoundlyConsulting\Imports\Enums\{DuplicateMode, ImportOperation};
-use RoundlyConsulting\Imports\Facades\Imports;
+use RoundlyConsulting\Imports\Enums\ImportOperation;
 use RoundlyConsulting\Imports\Importer;
 use RoundlyConsulting\Imports\Rows\{ImportContext, ImportRow};
 
-final class AssetsImporter extends Importer
+final class AssetsImporter extends Importer   // key `assets`, label `Assets`
 {
-    public function key(): string { return 'assets'; }
-    public function label(): string { return 'Assets'; }
     public function model(): string { return Asset::class; }
     public function ownership(): Ownership { return Ownership::column('team_id'); }
     public function naturalKey(): NaturalKey { return NaturalKey::by('asset_tag')->then('serial_number'); }
@@ -57,7 +54,7 @@ final class AssetsImporter extends Importer
             Field::text('serial_number'),
             Field::text('name')->required()->max(120),
             Field::date('purchased_on'),
-            Field::reference('vendor')->to(Vendor::class)->by('vat_id', 'name'),
+            Field::reference('vendor')->to(Vendor::class)->by('vat_id', 'name')->storeAs('vendor_id'),
         ];
     }
 
@@ -68,12 +65,12 @@ final class AssetsImporter extends Importer
 
     public function create(ImportRow $row, ImportContext $context): Model
     {
-        return Asset::create([...$row->except('vendor'), 'vendor_id' => $row->reference('vendor')?->getKey(), ...$context->ownerAttributes()]);
+        return Asset::create([...$row->attributes(), ...$context->ownerAttributes()]);
     }
 
     public function update(Model $asset, ImportRow $row, ImportContext $context): Model
     {
-        return tap($asset)->update($row->except('vendor'));
+        return tap($asset)->update($row->changes());   // blank cells keep the stored value
     }
 }
 ```
@@ -81,10 +78,13 @@ final class AssetsImporter extends Importer
 Then upload, preview, commit — and undo if needed:
 
 ```php
+use RoundlyConsulting\Imports\Enums\DuplicateMode;
+use RoundlyConsulting\Imports\Facades\Imports;
+
 $import = Imports::for($team)->by($user)
     ->upload('assets', $request->file('file'))   // CSV or XLSX; columns map from the headers
     ->mode(DuplicateMode::Update)
-    ->preview();                                 // every row checked, nothing saved yet
+    ->preview();   // ≤ 500 rows: checked now; larger files validate on the queue — poll isPreviewed()
 
 $import->counts();                               // valid 47 · invalid 2 · duplicates 1
 $batch = $import->commit();                      // a background job batch

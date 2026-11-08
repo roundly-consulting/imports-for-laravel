@@ -1,3 +1,6 @@
 {
-    "preset": "laravel"
+    "preset": "laravel",
+    "notPath": [
+        "tests/Docs/Readme/AssetsImporter.php"
+    ]
 }
