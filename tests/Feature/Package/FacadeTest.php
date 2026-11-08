@@ -126,6 +126,11 @@ it('fails each fake assertion that did not happen', function (string $assertion,
     'error report' => ['assertErrorReportBuilt', []],
     'pruned' => ['assertPruned', []],
     'swept' => ['assertSwept', []],
+    'mapping deleted' => ['assertMappingDeleted', ['ERP']],
+    'mapping deleted any' => ['assertMappingDeleted', []],
+    'mode chosen' => ['assertModeChosen', []],
+    'mode chosen value' => ['assertModeChosen', [DuplicateMode::Update]],
+    'source configured' => ['assertSourceConfigured', []],
 ]);
 
 it('fails each assertNothing* after the operation happened', function (): void {
@@ -135,7 +140,7 @@ it('fails each assertNothing* after the operation happened', function (): void {
     $user = admin($team);
 
     $session = Imports::for($team)->by($user)->upload('assets', SpreadsheetFactory::csv(['Inv', 'Name'], [['A', 'B']]));
-    $session->map(['Inv' => 'asset_tag', 'Name' => 'name'])->saveMapping('ERP')->mode(DuplicateMode::Skip)->preview();
+    $session->useHeaderRow(1)->map(['Inv' => 'asset_tag', 'Name' => 'name'])->saveMapping('ERP')->mode(DuplicateMode::Skip)->preview();
     $session->errorReport(TemplateFormat::Csv);
     Imports::for($team)->by($user)->uploadFiles('documents', SpreadsheetFactory::file('a.pdf', 'x'))->discard();
     $batch = $session->commit();
@@ -153,11 +158,17 @@ it('fails each assertNothing* after the operation happened', function (): void {
     $fake->assertErrorReportBuilt();
     $fake->assertPruned();
     $fake->assertSwept();
+    $fake->assertMappingDeleted('ERP');
+    $fake->assertModeChosen(DuplicateMode::Skip, static fn (ImportSession $s): bool => $s->is($session->model()));
+    $fake->assertSourceConfigured(static fn (ImportSession $s): bool => $s->is($session->model()));
+    expect(fn () => $fake->assertModeChosen(DuplicateMode::Update))->toThrow(ExpectationFailedException::class)
+        ->and(fn () => $fake->assertMappingDeleted('Other'))->toThrow(ExpectationFailedException::class);
 
     foreach ([
         'assertNothingUploaded', 'assertNothingMapped', 'assertNoMappingSaved', 'assertNothingPreviewed',
         'assertNothingCommitted', 'assertNothingCancelled', 'assertNothingDiscarded', 'assertNoTemplateBuilt',
         'assertNoErrorReportBuilt', 'assertNotPruned', 'assertNotSwept', 'assertNothingHappened',
+        'assertNoFilesUploaded', 'assertNoMappingDeleted', 'assertNoModeChosen', 'assertNoSourceConfigured',
     ] as $assertion) {
         expect(fn () => $fake->{$assertion}())->toThrow(ExpectationFailedException::class);
     }
@@ -172,7 +183,8 @@ it('passes every assertNothing* on an untouched fake', function (): void {
         'assertNothingUploaded', 'assertNothingMapped', 'assertNoMappingSaved', 'assertNothingPreviewed',
         'assertNothingCommitted', 'assertNothingCancelled', 'assertNothingResumed', 'assertNothingRolledBack',
         'assertNothingDiscarded', 'assertNoTemplateBuilt', 'assertNoErrorReportBuilt', 'assertNotPruned',
-        'assertNotSwept', 'assertNothingHappened',
+        'assertNotSwept', 'assertNothingHappened', 'assertNoFilesUploaded', 'assertNoMappingDeleted',
+        'assertNoModeChosen', 'assertNoSourceConfigured',
     ] as $assertion) {
         $fake->{$assertion}();
     }
@@ -224,4 +236,15 @@ it('records handle saves with the owner, like session saves', function (): void 
         ->and(array_map(static fn (RecordedOperation $r): string => $r->context['importer'], $saves))->toBe(['assets', 'assets']);
     $fake->assertMappingSaved('Handle');
     $fake->assertMappingSaved('Session');
+});
+
+it('lists every fake assertion in the facade docblock', function (): void {
+    $documented = [];
+    preg_match_all('/@method static void (assert\w+)\(/', (string) (new ReflectionClass(Imports::class))->getDocComment(), $documented);
+    $assertions = array_values(array_filter(
+        array_map(static fn (ReflectionMethod $m): string => $m->getName(), (new ReflectionClass(ImportsFake::class))->getMethods(ReflectionMethod::IS_PUBLIC)),
+        static fn (string $name): bool => str_starts_with($name, 'assert'),
+    ));
+
+    expect($documented[1])->toEqualCanonicalizing($assertions)->and($assertions)->toContain('assertModeChosen', 'assertNoFilesUploaded');
 });

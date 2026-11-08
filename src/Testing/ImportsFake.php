@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Imports\Testing;
 
 use Closure;
 use PHPUnit\Framework\Assert as PHPUnit;
+use RoundlyConsulting\Imports\Enums\DuplicateMode;
 use RoundlyConsulting\Imports\Enums\TemplateFormat;
 use RoundlyConsulting\Imports\ImportsManager;
 use RoundlyConsulting\Imports\Models\ImportBatch;
@@ -85,6 +86,11 @@ final class ImportsFake extends ImportsManager
         $this->assertSessions('uploadFiles', $importer, $callback, 'uploaded as files');
     }
 
+    public function assertNoFilesUploaded(): void
+    {
+        $this->assertNone('uploadFiles', 'uploaded as files');
+    }
+
     /**
      * @param  (Closure(ImportSession): bool)|null  $callback
      */
@@ -108,6 +114,53 @@ final class ImportsFake extends ImportsManager
     public function assertNoMappingSaved(): void
     {
         $this->assertNone('saveMapping', 'saved as a mapping');
+    }
+
+    public function assertMappingDeleted(?string $name = null): void
+    {
+        $matching = array_filter($this->recorded('deleteMapping'), static fn (RecordedOperation $r): bool => $name === null || ($r->context['name'] ?? null) === $name);
+
+        PHPUnit::assertNotEmpty($matching, $name === null ? 'Expected a saved mapping to be deleted, but none was.' : "Expected the mapping named [{$name}] to be deleted, but it was not.");
+    }
+
+    public function assertNoMappingDeleted(): void
+    {
+        $this->assertNone('deleteMapping', 'deleted as a mapping');
+    }
+
+    /**
+     * @param  (Closure(ImportSession): bool)|null  $callback
+     */
+    public function assertModeChosen(?DuplicateMode $mode = null, ?Closure $callback = null): void
+    {
+        $matching = array_filter($this->recorded('mode'), static function (RecordedOperation $r) use ($mode, $callback): bool {
+            $session = $r->context['session'] ?? null;
+
+            return ($mode === null || ($r->context['mode'] ?? null) === $mode)
+                && ($callback === null || ($session instanceof ImportSession && $callback($session)));
+        });
+
+        PHPUnit::assertNotEmpty($matching, $mode === null && $callback === null
+            ? 'Expected an import to be given a mode, but none was.'
+            : 'Expected a matching import to be given '.($mode === null ? 'a mode' : 'the mode ['.$mode->value.']').', but none was.');
+    }
+
+    public function assertNoModeChosen(): void
+    {
+        $this->assertNone('mode', 'given a mode');
+    }
+
+    /**
+     * @param  (Closure(ImportSession): bool)|null  $callback
+     */
+    public function assertSourceConfigured(?Closure $callback = null): void
+    {
+        $this->assertSessions('configureSource', null, $callback, 'given a sheet, delimiter or header row');
+    }
+
+    public function assertNoSourceConfigured(): void
+    {
+        $this->assertNone('configureSource', 'given a sheet, delimiter or header row');
     }
 
     /**
