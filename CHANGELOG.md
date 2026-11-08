@@ -10,6 +10,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 
 - A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
 - Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
+- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
+
+### Fixed
+
+- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
+- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
 
 ### Fixed
 

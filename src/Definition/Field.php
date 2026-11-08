@@ -273,7 +273,8 @@ final class Field
 
     /**
      * The allowed values: a `value => label` map (or a list of values), or a backed enum (labels
-     * from enums-for-laravel's `label()` when the enum has it).
+     * from enums-for-laravel's `label()` when the enum has it). A map with keys 0, 1, 2, … is a
+     * list: its labels are the values.
      *
      * @param  array<int|string, string|array<string, string>>|class-string<BackedEnum>  $options
      */
@@ -292,9 +293,11 @@ final class Field
             }
 
             $field->options = [];
+            // Only a list is values without labels: `[1 => 'Male', 2 => 'Female']` keeps its codes.
+            $list = array_is_list($options);
 
             foreach ($options as $value => $label) {
-                if (is_int($value) && is_string($label)) {
+                if ($list && is_string($label)) {
                     $field->options[$label] = $label;
                 } else {
                     $field->options[(string) $value] = $label;

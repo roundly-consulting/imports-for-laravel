@@ -67,3 +67,15 @@ it('C-4: a choice value is matched as typed before it is read as a number', func
         ->and(chatCell($code, Cell::text('1.0')))->toBe('1')
         ->and(chatCell($region, Cell::text('03')))->toBe('error:invalid_choice');
 });
+
+it('V-1: a numeric value => label map keeps its codes; a list stays a list', function (): void {
+    $gender = Field::choice('gender')->options([1 => 'Male', 2 => 'Female']);
+    $state = Field::choice('state')->options(['active', 'retired']);
+
+    expect(array_keys($gender->options))->toBe([1, 2])
+        ->and(chatCell($gender, Cell::text('1')))->toBe('1')
+        ->and(chatCell($gender, Cell::text('Male')))->toBe('1')
+        ->and(chatCell($gender, Cell::text('female')))->toBe('2')
+        ->and(array_keys($state->options))->toBe(['active', 'retired'])
+        ->and(chatCell($state, Cell::text('Retired')))->toBe('retired');
+});
