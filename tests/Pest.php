@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
+use RoundlyConsulting\Imports\Tests\Http\HttpTestCase;
+use RoundlyConsulting\Imports\Tests\Install\InstallTestCase;
 use RoundlyConsulting\Imports\Tests\KeyTypes\KeyTypesTestCase;
 use RoundlyConsulting\Imports\Tests\TestCase;
 use Workbench\App\Hooks;
@@ -23,8 +25,10 @@ $fresh = function (): void {
     Hooks::reset();
 };
 
-uses(TestCase::class)->beforeEach($fresh)->in('Acceptance', 'Arch', 'Feature', 'Http', 'Memory', 'RealEngine', 'Teams');
+uses(TestCase::class)->beforeEach($fresh)->in('Acceptance', 'Arch', 'Feature', 'Memory', 'RealEngine', 'Teams');
+uses(HttpTestCase::class)->beforeEach($fresh)->in('Http');
 uses(KeyTypesTestCase::class)->beforeEach($fresh)->in('KeyTypes');
+uses(InstallTestCase::class)->beforeEach($fresh)->in('Install');
 
 /**
  * Run the database queue worker like a supervisor would: a fresh worker whenever one stops
