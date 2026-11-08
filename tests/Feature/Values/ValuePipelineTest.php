@@ -73,10 +73,11 @@ test('an_impossible_date_is_a_cell_error', function (): void {
         ->and(normalize($date, Cell::text('15. 1. 2026'))?->toDateString())->toBe('2026-01-15')
         ->and(normalize($date, Cell::number('46037'))?->toDateString())->toBe('2026-01-15')
         ->and(normalize($date, Cell::number('0')))->toBe('error:invalid_date')
-        ->and(normalize(Field::datetime('at'), Cell::text('2026-01-15 09:30'))?->format('Y-m-d H:i'))->toBe('2026-01-15 09:30')
-        ->and(normalize(Field::datetime('at'), Cell::text('2026-01-15'))?->format('Y-m-d H:i'))->toBe('2026-01-15 00:00')
+        // Read in the session timezone (Bratislava, UTC+1 in January), handed over in the app's (UTC).
+        ->and(normalize(Field::datetime('at'), Cell::text('2026-01-15 09:30'))?->format('Y-m-d H:i'))->toBe('2026-01-15 08:30')
+        ->and(normalize(Field::datetime('at'), Cell::text('2026-01-15'))?->format('Y-m-d H:i'))->toBe('2026-01-14 23:00')
         ->and(normalize(Field::datetime('at'), Cell::text('nope')))->toBe('error:invalid_datetime')
-        ->and(normalize(Field::datetime('at'), Cell::number('46037.5'))?->format('H:i'))->toBe('12:00');
+        ->and(normalize(Field::datetime('at'), Cell::number('46037.5'))?->format('H:i'))->toBe('11:00');
 });
 
 test('ambiguous_slash_dates_are_refused_by_default', function (): void {

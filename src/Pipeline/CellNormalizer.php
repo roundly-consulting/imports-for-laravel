@@ -39,6 +39,7 @@ final class CellNormalizer
         private readonly array $dateFormats,
         private readonly array $datetimeFormats,
         private readonly bool $date1904 = false,
+        private readonly string $appTimezone = 'UTC',
     ) {}
 
     /**
@@ -47,7 +48,7 @@ final class CellNormalizer
      */
     public static function forSession(string $locale, string $timezone, bool $date1904 = false): self
     {
-        return new self($locale, $timezone, ImportsConfig::cellLength(), ImportsConfig::dateFormats(), ImportsConfig::datetimeFormats(), $date1904);
+        return new self($locale, $timezone, ImportsConfig::cellLength(), ImportsConfig::dateFormats(), ImportsConfig::datetimeFormats(), $date1904, ImportsConfig::appTimezone());
     }
 
     public function normalize(Field $field, ?Cell $cell): Coerced
@@ -184,7 +185,7 @@ final class CellNormalizer
         if ($value instanceof DateTimeInterface) {
             $date = CarbonImmutable::instance($value);
 
-            return Coerced::value($withTime ? $date : $date->startOfDay());
+            return $this->dated($date, $withTime);
         }
 
         if (is_int($value) || is_float($value) || (is_string($value) && is_numeric($value) && preg_match('/^\d+(\.\d+)?$/', $value) === 1)) {
@@ -198,7 +199,7 @@ final class CellNormalizer
 
             return $date === null
                 ? Coerced::error($withTime ? 'invalid_datetime' : 'invalid_date')
-                : Coerced::value($withTime ? $date : $date->startOfDay());
+                : $this->dated($date, $withTime);
         }
 
         if (! is_string($value)) {
@@ -218,11 +219,20 @@ final class CellNormalizer
 
             // A round trip refuses what PHP would silently roll over (31.02.2026 → 03.03.2026).
             if ($date instanceof CarbonImmutable && $date->format($format) === $value) {
-                return Coerced::value($withTime ? $date : $date->startOfDay());
+                return $this->dated($date, $withTime);
             }
         }
 
         return Coerced::error($withTime ? 'invalid_datetime' : 'invalid_date', ['format' => $withTime ? 'yyyy-mm-dd hh:mm' : 'yyyy-mm-dd']);
+    }
+
+    /**
+     * A file's clocks read in the session timezone; a date-time leaves as that instant in the app
+     * timezone, which is what Eloquent stores without converting. A date stays the calendar day.
+     */
+    private function dated(CarbonImmutable $date, bool $withTime): Coerced
+    {
+        return Coerced::value($withTime ? $date->setTimezone($this->appTimezone) : $date->startOfDay());
     }
 
     private function choice(Field $field, mixed $value): Coerced

@@ -306,14 +306,22 @@ final class ImportsConfig
         return Config::list('imports.values.datetime_formats', ['Y-m-d H:i:s', 'Y-m-d H:i', 'd.m.Y H:i', 'j.n.Y H:i']);
     }
 
+    /**
+     * `app.timezone` — what date-time values are converted to before an importer sees them.
+     */
+    public static function appTimezone(): string
+    {
+        $app = config('app.timezone');
+
+        return is_string($app) && $app !== '' ? $app : 'UTC';
+    }
+
     public static function timezone(): string
     {
         $timezone = config('imports.values.timezone');
 
         if (self::blank($timezone)) {
-            $app = config('app.timezone');
-
-            return is_string($app) && $app !== '' ? $app : 'UTC';
+            return self::appTimezone();
         }
 
         if (! is_string($timezone) || ! in_array($timezone, timezone_identifiers_list(), true) && $timezone !== 'UTC') {

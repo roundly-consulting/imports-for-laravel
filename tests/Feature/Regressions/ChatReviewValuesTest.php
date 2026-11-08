@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
 use RoundlyConsulting\Imports\Definition\Field;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
@@ -28,6 +30,21 @@ function chatErrorCodes(SessionHandle $session): array
     $row = $session->rows(RowFilter::invalid())->paginate()->items()[0] ?? null;
 
     return $row === null ? [] : array_map(static fn ($error): string => $error->code, $row->errors);
+}
+
+final class ChatReviewDatetimeInvite extends Model
+{
+    protected $table = 'invitations';
+
+    protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return ['accepted_at' => 'datetime'];
+    }
 }
 
 it('C-1: a number with a huge exponent is refused instead of being expanded', function (): void {
@@ -78,4 +95,20 @@ it('V-1: a numeric value => label map keeps its codes; a list stays a list', fun
         ->and(chatCell($gender, Cell::text('female')))->toBe('2')
         ->and(array_keys($state->options))->toBe(['active', 'retired'])
         ->and(chatCell($state, Cell::text('Retired')))->toBe('retired');
+});
+
+it('C-5: a date-time value reaches the importer in the app timezone; a date stays a date', function (): void {
+    config(['app.timezone' => 'UTC']);
+
+    $at = chatCell(Field::datetime('accepted_at'), Cell::text('2026-01-15 09:30'), 'Europe/Bratislava');
+    $serial = chatCell(Field::datetime('accepted_at'), Cell::number('46037.375'), 'Europe/Bratislava');   // 2026-01-15 09:00
+    $date = chatCell(Field::date('on'), Cell::text('2026-01-15'), 'Europe/Bratislava');
+
+    expect($at->format('Y-m-d H:i:s e'))->toBe('2026-01-15 08:30:00 UTC')
+        ->and($serial->format('Y-m-d H:i e'))->toBe('2026-01-15 08:00 UTC')
+        ->and($date->format('Y-m-d H:i'))->toBe('2026-01-15 00:00');
+
+    $invite = ChatReviewDatetimeInvite::query()->create(['team_id' => team()->id, 'email' => 'a@example.com', 'role' => 'member', 'accepted_at' => $at]);
+
+    expect(DB::table('invitations')->where('id', $invite->id)->value('accepted_at'))->toBe('2026-01-15 08:30:00');
 });
