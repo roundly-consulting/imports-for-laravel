@@ -30,5 +30,7 @@ final class Hooks
     {
         self::$calls = [];
         self::$onCreate = null;
+        Importers\AssetsImporter::$changeDetection = null;
+        Importers\DocumentsImporter::$duplicates = null;
     }
 }

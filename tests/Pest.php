@@ -6,12 +6,16 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use RoundlyConsulting\Imports\Exceptions\ImportFileRejectedException;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
+use RoundlyConsulting\Imports\Reading\Cell;
+use RoundlyConsulting\Imports\Reading\SpreadsheetFile;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
 use RoundlyConsulting\Imports\Tests\Http\HttpTestCase;
 use RoundlyConsulting\Imports\Tests\Install\InstallTestCase;
 use RoundlyConsulting\Imports\Tests\KeyTypes\KeyTypesTestCase;
+use RoundlyConsulting\Imports\Tests\Support\XlsxBuilder;
 use RoundlyConsulting\Imports\Tests\TestCase;
 use Workbench\App\Hooks;
 use Workbench\App\Models\Team;
@@ -93,4 +97,37 @@ function assetsCsv(array $rows, string $delimiter = ','): UploadedFile
 function uploadAssets(Team $team, User $user, UploadedFile $file): SessionHandle
 {
     return Imports::for($team)->by($user)->upload('assets', $file);
+}
+
+/**
+ * @return array<int, list<string|null>>
+ */
+function displayRows(SpreadsheetFile $file): array
+{
+    $rows = [];
+
+    foreach ($file->rows() as $number => $cells) {
+        $rows[$number] = array_map(static fn (?Cell $cell): ?string => $cell?->display(), $cells);
+    }
+
+    return $rows;
+}
+
+function csvFile(string $content): string
+{
+    $path = XlsxBuilder::path('csv');
+    file_put_contents($path, $content);
+
+    return $path;
+}
+
+function rejectionOf(Closure $read): ImportFileRejectedException
+{
+    try {
+        $read();
+    } catch (ImportFileRejectedException $exception) {
+        return $exception;
+    }
+
+    throw new RuntimeException('Expected a rejection.');
 }

@@ -6,6 +6,7 @@ namespace Workbench\App\Importers;
 
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\Imports\Definition\FileDuplicates;
 use RoundlyConsulting\Imports\Definition\FileRules;
 use RoundlyConsulting\Imports\Definition\Ownership;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
@@ -20,6 +21,14 @@ use Workbench\App\Models\User;
  */
 final class DocumentsImporter extends FileImporter
 {
+    /** A test switch for the duplicate check. */
+    public static ?FileDuplicates $duplicates = null;
+
+    public function duplicateCheck(): FileDuplicates
+    {
+        return self::$duplicates ?? parent::duplicateCheck();
+    }
+
     public function key(): string
     {
         return 'documents';

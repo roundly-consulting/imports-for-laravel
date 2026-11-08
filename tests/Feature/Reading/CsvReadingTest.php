@@ -4,45 +4,8 @@ declare(strict_types=1);
 
 use RoundlyConsulting\Imports\Enums\DelimiterSource;
 use RoundlyConsulting\Imports\Enums\RejectionReason;
-use RoundlyConsulting\Imports\Exceptions\ImportFileRejectedException;
 use RoundlyConsulting\Imports\Facades\Imports;
-use RoundlyConsulting\Imports\Reading\Cell;
-use RoundlyConsulting\Imports\Reading\SpreadsheetFile;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
-use RoundlyConsulting\Imports\Tests\Support\XlsxBuilder;
-
-/**
- * @return array<int, list<string|null>>
- */
-function displayRows(SpreadsheetFile $file): array
-{
-    $rows = [];
-
-    foreach ($file->rows() as $number => $cells) {
-        $rows[$number] = array_map(static fn (?Cell $cell): ?string => $cell?->display(), $cells);
-    }
-
-    return $rows;
-}
-
-function csvFile(string $content): string
-{
-    $path = XlsxBuilder::path('csv');
-    file_put_contents($path, $content);
-
-    return $path;
-}
-
-function rejectionOf(Closure $read): ImportFileRejectedException
-{
-    try {
-        $read();
-    } catch (ImportFileRejectedException $exception) {
-        return $exception;
-    }
-
-    throw new RuntimeException('Expected a rejection.');
-}
 
 test('a_utf16_csv_is_rejected_naming_csv_utf8', function (): void {
     $rejection = rejectionOf(fn () => Imports::read(__DIR__.'/../../Fixtures/utf16le.csv'));
