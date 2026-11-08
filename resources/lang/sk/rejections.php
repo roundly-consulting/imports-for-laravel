@@ -18,6 +18,7 @@ return [
     'too_many_columns' => 'Súbor má :actual stĺpcov; limit je :limit.',
     'too_many_rows' => 'Súbor má viac ako :limit dátových riadkov.',
     'malformed_spreadsheet' => 'Tabuľka je poškodená alebo nie je platným zošitom XLSX.',
+    'data_after_blank_rows' => 'Riadok :row obsahuje údaje pod viac ako :limit prázdnymi riadkami. Odstráňte prázdne riadky alebo presuňte tieto údaje na samostatný hárok.',
     'format_not_accepted' => 'Tento import neprijíma súbory :format.',
     'too_many_files' => 'Súborov je :actual; naraz ich možno nahrať najviac :limit.',
     'archive_too_large' => 'Archív je príliš veľký; limit je :limit.',

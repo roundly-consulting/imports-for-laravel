@@ -89,7 +89,7 @@ return [
         'max_entries' => 1000,
         'max_part_size' => 268435456,       // bytes, per part, counted while inflating
         'max_inflated' => 536870912,        // bytes, every part one read opens together
-        'max_blank_rows' => 10000,
+        'max_blank_rows' => 10000,          // empty rows allowed between data rows; data below a longer gap rejects the file
         'shared_strings_memory' => 2097152, // bytes kept in memory before the spool goes to disk
         'allow_macro_enabled' => false,
     ],

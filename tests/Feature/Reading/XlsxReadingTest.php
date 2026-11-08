@@ -311,9 +311,12 @@ test('formatted_blank_tails_are_ignored', function (): void {
         $rows .= '<row r="'.$i.'" s="1" customFormat="1"><c r="A'.$i.'" s="1"/></row>';
     }
 
+    expect(displayRows(Imports::read(XlsxBuilder::make(['S' => $rows]))))->toBe([2 => ['Laptop']]);
+
+    // Data below such a tail is refused, not dropped (dual review O-7, tests/Feature/Regressions/BlankGapTest.php).
     $rows .= XlsxBuilder::row(500, ['Far away']);
 
-    expect(displayRows(Imports::read(XlsxBuilder::make(['S' => $rows]))))->toBe([2 => ['Laptop']]);
+    expect(rejectionOf(fn () => displayRows(Imports::read(XlsxBuilder::make(['S' => $rows]))))->reason)->toBe(RejectionReason::DataAfterBlankRows);
 });
 
 test('styled_empty_columns_do_not_count_against_the_limit', function (): void {

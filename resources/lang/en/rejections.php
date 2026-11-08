@@ -18,6 +18,7 @@ return [
     'too_many_columns' => 'The file has :actual columns; the limit is :limit.',
     'too_many_rows' => 'The file has more than :limit data rows.',
     'malformed_spreadsheet' => 'The spreadsheet is damaged or not a valid XLSX workbook.',
+    'data_after_blank_rows' => 'Row :row has data below more than :limit empty rows. Remove the empty rows or move that data to its own sheet.',
     'format_not_accepted' => 'This importer does not accept :format files.',
     'too_many_files' => 'There are :actual files; at most :limit can be uploaded at once.',
     'archive_too_large' => 'The archive is too large; the limit is :limit.',

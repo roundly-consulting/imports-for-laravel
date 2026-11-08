@@ -30,6 +30,7 @@ enum RejectionReason: string
     case TooManyColumns = 'too_many_columns';
     case TooManyRows = 'too_many_rows';
     case MalformedSpreadsheet = 'malformed_spreadsheet';
+    case DataAfterBlankRows = 'data_after_blank_rows';
     case FormatNotAccepted = 'format_not_accepted';
     case TooManyFiles = 'too_many_files';
     case ArchiveTooLarge = 'archive_too_large';

@@ -106,6 +106,7 @@ return [
         'too_many_columns' => 'Priveľa stĺpcov',
         'too_many_rows' => 'Priveľa riadkov',
         'malformed_spreadsheet' => 'Poškodená tabuľka',
+        'data_after_blank_rows' => 'Údaje za prázdnymi riadkami',
         'format_not_accepted' => 'Neprijatý formát',
         'too_many_files' => 'Priveľa súborov',
         'archive_too_large' => 'Príliš veľký archív',

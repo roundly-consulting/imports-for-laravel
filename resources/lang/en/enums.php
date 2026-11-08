@@ -106,6 +106,7 @@ return [
         'too_many_columns' => 'Too many columns',
         'too_many_rows' => 'Too many rows',
         'malformed_spreadsheet' => 'Malformed spreadsheet',
+        'data_after_blank_rows' => 'Data after empty rows',
         'format_not_accepted' => 'Format not accepted',
         'too_many_files' => 'Too many files',
         'archive_too_large' => 'Archive too large',

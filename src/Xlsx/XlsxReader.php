@@ -98,15 +98,12 @@ final class XlsxReader implements RowSource
                 $cells = $reader->isEmptyElement ? [] : $this->cells($reader);
 
                 if ($cells === []) {
-                    if ($number - $lastFilled > $this->options->maxBlankRows) {
-                        break;      // a formatted tail: nothing more is coming
-                    }
-
-                    continue;
+                    continue;       // a formatted blank row (a styled tail, say): nothing to yield
                 }
 
-                if ($number - $lastFilled - 1 > $this->options->maxBlankRows) {
-                    break;
+                // Data below a long gap is not a tail: dropping it would lose rows silently.
+                if ($lastFilled > 0 && $number - $lastFilled - 1 > $this->options->maxBlankRows) {
+                    throw ImportFileRejectedException::because(RejectionReason::DataAfterBlankRows, ['row' => $number, 'limit' => $this->options->maxBlankRows]);
                 }
 
                 $lastFilled = $number;
