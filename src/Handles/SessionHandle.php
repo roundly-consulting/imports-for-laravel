@@ -22,6 +22,8 @@ use RoundlyConsulting\Imports\DataTransferObjects\ImportPreview;
 use RoundlyConsulting\Imports\DataTransferObjects\MappingSuggestion;
 use RoundlyConsulting\Imports\DataTransferObjects\Progress;
 use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
+use RoundlyConsulting\Imports\DataTransferObjects\SavedMapping;
+use RoundlyConsulting\Imports\DataTransferObjects\SaveMappingData;
 use RoundlyConsulting\Imports\DataTransferObjects\SheetInfo;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
@@ -138,7 +140,8 @@ final readonly class SessionHandle
 
     public function saveMapping(string $name): self
     {
-        $this->manager->perform('saveMapping', SaveMappingAction::class, fn (SaveMappingAction $action): mixed => $action->execute($this->session, $name, $this->actor), ['session' => $this->session, 'owner' => Audits::owner($this->session), 'importer' => $this->session->importer, 'name' => $name]);
+        $data = SaveMappingData::fromSession($this->session, $name, $this->actor);
+        $this->manager->perform('saveMapping', SaveMappingAction::class, static fn (SaveMappingAction $action): SavedMapping => $action->execute($data), ['session' => $this->session, 'owner' => $data->owner, 'importer' => $data->importer, 'name' => $data->name, 'data' => $data]);
 
         return $this;
     }

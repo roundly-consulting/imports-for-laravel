@@ -6,15 +6,13 @@ namespace RoundlyConsulting\Imports\Handles;
 
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Imports\Actions\Mapping\DeleteSavedMappingAction;
+use RoundlyConsulting\Imports\Actions\Mapping\SaveMappingAction;
 use RoundlyConsulting\Imports\DataTransferObjects\SavedMapping;
+use RoundlyConsulting\Imports\DataTransferObjects\SaveMappingData;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
-use RoundlyConsulting\Imports\Exceptions\TooManySavedMappingsException;
 use RoundlyConsulting\Imports\ImportsManager;
-use RoundlyConsulting\Imports\Mapping\HeaderNormalizer;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\Access;
-use RoundlyConsulting\Imports\Support\ImportsConfig;
-use RoundlyConsulting\Imports\Support\Locales;
 use RoundlyConsulting\Imports\Support\SavedMappingStore;
 
 /**
@@ -48,32 +46,17 @@ final readonly class SavedMappingsHandle
 
     /**
      * Save a mapping from header text to field names (`['Inventárne č.' => 'asset_tag']`); the
-     * header order given is the signature an identical file is recognised by.
+     * header order given is the signature an identical file is recognised by. The same action,
+     * checks and `MappingSaved` event as saving a session's mapping.
      *
      * @param  array<string, string>  $columns
      */
     public function save(string $name, array $columns): SavedMapping
     {
-        if (! ImportsConfig::mappingsEnabled()) {
-            throw TooManySavedMappingsException::disabled();
-        }
+        $data = SaveMappingData::fromColumns($this->owner, $this->importer, $name, $columns, $this->actor);
+        $saved = $this->manager->perform('saveMapping', SaveMappingAction::class, static fn (SaveMappingAction $action): SavedMapping => $action->execute($data), ['owner' => $this->owner, 'importer' => $this->importer, 'name' => $data->name, 'data' => $data]);
 
-        $this->authorize(ImportOperation::Upload);
-        $locale = Locales::current();
-        $headers = array_map('strval', array_keys($columns));
-        $normalized = [];
-
-        foreach ($columns as $header => $field) {
-            $normalized[HeaderNormalizer::normalize((string) $header, $locale)] = $field;
-        }
-
-        $mapping = new SavedMapping(trim($name), $this->importer, $normalized, HeaderNormalizer::signature($headers, $locale));
-
-        return $this->manager->perform('saveMapping', SavedMappingStore::class, function (SavedMappingStore $store) use ($mapping): SavedMapping {
-            $store->save($this->owner, $mapping);
-
-            return $store->find($this->owner, $this->importer, $mapping->name) ?? $mapping;
-        }, ['owner' => $this->owner, 'importer' => $this->importer, 'name' => $mapping->name]) ?? $mapping;
+        return $saved instanceof SavedMapping ? $saved : new SavedMapping($data->name, $this->importer, $data->columns, $data->signature);
     }
 
     public function delete(string $name): bool

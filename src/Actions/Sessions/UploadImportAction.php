@@ -125,8 +125,8 @@ final readonly class UploadImportAction
                 fclose($stream);
             }
 
-            $saved = ImportsConfig::mappingsEnabled() && ! HeaderNormalizer::collide($headers, $locale)
-                ? $this->mappings->bySignature($data->owner, $importer->key(), HeaderNormalizer::signature($headers, $locale))
+            $saved = ImportsConfig::mappingsEnabled() && ! HeaderNormalizer::collide($headers)
+                ? $this->mappings->bySignature($data->owner, $importer->key(), HeaderNormalizer::signature($headers))
                 : null;
 
             $session->file_path = $stored;

@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Imports\DataTransferObjects\ColumnMapping;
 use RoundlyConsulting\Imports\DataTransferObjects\MappedColumn;
 use RoundlyConsulting\Imports\Enums\MappingSource;
 use RoundlyConsulting\Imports\Enums\RejectionReason;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
+use RoundlyConsulting\Imports\Events\MappingSaved;
 use RoundlyConsulting\Imports\Exceptions\ImportFileRejectedException;
 use RoundlyConsulting\Imports\Exceptions\InvalidMappingException;
+use RoundlyConsulting\Imports\Exceptions\InvalidSavedMappingException;
 use RoundlyConsulting\Imports\Exceptions\TooManySavedMappingsException;
+use RoundlyConsulting\Imports\Exceptions\UnknownImporterException;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Mapping\HeaderNormalizer;
 use RoundlyConsulting\Imports\Options\SavedMappings;
@@ -193,8 +197,8 @@ test('a_saved_mapping_that_would_overflow_the_option_row_is_refused', function (
     $team = team();
     $columns = [];
 
-    for ($i = 0; $i < 60; $i++) {
-        $columns['A long header number '.$i] = 'name';
+    foreach (['asset_tag', 'serial_number', 'name', 'status', 'purchased_on', 'price', 'insured', 'vendor', 'assignee'] as $i => $field) {
+        $columns[str_repeat('A long header ', 12).$i] = $field;
     }
 
     expect(fn () => Imports::for($team)->by(admin($team))->mappings('assets')->save('Huge', $columns))
@@ -209,7 +213,7 @@ test('the_number_of_saved_mappings_per_importer_is_capped', function (): void {
     $handle->save('Two', ['A' => 'name']);
 
     expect(fn () => $handle->save('Three', ['A' => 'name']))->toThrow(TooManySavedMappingsException::class)
-        ->and(fn () => $handle->save('', ['A' => 'name']))->toThrow(TooManySavedMappingsException::class);
+        ->and(fn () => $handle->save('', ['A' => 'name']))->toThrow(InvalidSavedMappingException::class);
 });
 
 test('saved_mappings_are_unreadable_through_the_generic_options_api', function (): void {
@@ -227,11 +231,77 @@ test('saved_mappings_are_unreadable_through_the_generic_options_api', function (
         ->and($options->withoutAuthorization(fn (): mixed => $options->get(SavedMappings::class, $team)))->toHaveKey('assets');
 });
 
-test('saved_mappings_can_be_switched_off', function (): void {
+test('disabled_mappings_refuse_with_invalid_saved_mapping', function (): void {
     config()->set('imports.mappings.enabled', false);
     $team = team();
     $session = uploadAssets($team, admin($team), SpreadsheetFactory::csv(['Inv', 'name'], [['A', 'B']]));
 
-    expect(fn () => $session->saveMapping('X'))->toThrow(TooManySavedMappingsException::class)
-        ->and(fn () => Imports::for($team)->by(admin($team))->mappings('assets')->save('X', ['A' => 'name']))->toThrow(TooManySavedMappingsException::class);
+    expect(fn () => $session->saveMapping('X'))->toThrow(InvalidSavedMappingException::class, 'Saved mappings are switched off.')
+        ->and(fn () => Imports::for($team)->by(admin($team))->mappings('assets')->save('X', ['A' => 'name']))->toThrow(InvalidSavedMappingException::class, 'Saved mappings are switched off.');
+});
+
+test('saving_through_the_handle_dispatches_mapping_saved', function (): void {
+    Event::fake([MappingSaved::class]);
+    $team = team();
+    $user = admin($team);
+
+    Imports::for($team)->by($user)->mappings('assets')->save('ERP', ['Inv' => 'asset_tag', 'Popis' => 'name']);
+
+    Event::assertDispatched(MappingSaved::class, fn (MappingSaved $event): bool => $event->owner->is($team)
+        && $event->actor?->is($user) === true
+        && $event->importer === 'assets'
+        && $event->sessionId === null
+        && $event->mapping->columns === ['inv' => 'asset_tag', 'popis' => 'name']);
+});
+
+test('the_handle_and_the_session_save_the_same_shape', function (): void {
+    $team = team();
+    $user = admin($team);
+    $headers = ['Inventárne č.', 'Popis'];
+    $fromSession = uploadAssets($team, $user, SpreadsheetFactory::csv($headers, [['A-1', 'Laptop']]))
+        ->map(['Inventárne č.' => 'asset_tag', 'Popis' => 'name'])->saveMapping('Session');
+    $fromHandle = Imports::for($team)->by($user)->mappings('assets')->save('Handle', ['Inventárne č.' => 'asset_tag', 'Popis' => 'name']);
+    $session = Imports::for($team)->by($user)->mappings('assets')->find('Session');
+
+    expect($session?->columns)->toBe($fromHandle->columns)
+        ->and($session?->signature)->toBe($fromHandle->signature)
+        ->and($fromSession->model()->mapping)->toBe([0 => 'asset_tag', 1 => 'name']);
+});
+
+test('a_mapping_naming_an_unknown_field_is_refused', function (): void {
+    $team = team();
+
+    expect(fn () => Imports::for($team)->by(admin($team))->mappings('assets')->save('X', ['A' => 'nope']))
+        ->toThrow(InvalidSavedMappingException::class, 'The importer has no field [nope].');
+});
+
+test('a_mapping_naming_a_field_twice_is_refused', function (): void {
+    $team = team();
+
+    expect(fn () => Imports::for($team)->by(admin($team))->mappings('assets')->save('X', ['A' => 'name', 'B' => 'name']))
+        ->toThrow(InvalidSavedMappingException::class, 'The field [name] is mapped twice.')
+        ->and(fn () => Imports::for($team)->by(admin($team))->mappings('assets')->save('X', []))
+        ->toThrow(InvalidSavedMappingException::class, 'at least one column')
+        ->and(fn () => Imports::for($team)->by(admin($team))->mappings('assets')->save(str_repeat('n', 61), ['A' => 'name']))
+        ->toThrow(InvalidSavedMappingException::class, '1 to 60 characters');
+});
+
+test('a_mapping_for_a_file_importer_is_refused', function (): void {
+    $team = team();
+
+    expect(fn () => Imports::for($team)->by(admin($team))->mappings('documents')->save('X', ['A' => 'name']))
+        ->toThrow(UnknownImporterException::class);
+});
+
+test('a_saved_mapping_is_recognised_whatever_the_session_locale', function (): void {
+    $team = team();
+    $user = admin($team);
+    $headers = ['Gerät Nr', 'Bezeichnung'];
+    uploadAssets($team, $user, SpreadsheetFactory::csv($headers, [['A-1', 'Laptop']]))
+        ->map(['Gerät Nr' => 'asset_tag', 'Bezeichnung' => 'name'])->saveMapping('DE');
+
+    $german = Imports::for($team)->by($user)->upload('assets', SpreadsheetFactory::csv($headers, [['A-2', 'Phone']]), locale: 'de');
+
+    expect($german->model()->mapping)->toBe([0 => 'asset_tag', 1 => 'name'])
+        ->and($german->suggestMapping()->savedMapping)->toBe('DE');
 });

@@ -39,13 +39,15 @@ final class HeaderNormalizer
     }
 
     /**
-     * A digest of the normalised header row: identical headers → the same signature.
+     * A digest of the normalised header row: identical headers → the same signature. Always
+     * transliterated under `en`, whatever the session locale (`ä` is `ae` under `de`, `a` under
+     * `en`), so a saved mapping is recognised by every user of the owner.
      *
      * @param  list<string|null>  $headers
      */
-    public static function signature(array $headers, string $locale = 'en'): string
+    public static function signature(array $headers): string
     {
-        return Digests::hex(implode("\x1f", self::all($headers, $locale)));
+        return Digests::hex(implode("\x1f", self::all($headers)));
     }
 
     /**

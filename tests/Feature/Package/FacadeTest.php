@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Facade;
 use PHPUnit\Framework\ExpectationFailedException;
+use RoundlyConsulting\Imports\Actions\Mapping\SaveMappingAction;
 use RoundlyConsulting\Imports\Actions\Sessions\UploadImportAction;
 use RoundlyConsulting\Imports\DataTransferObjects\ImportSource;
 use RoundlyConsulting\Imports\DataTransferObjects\UploadData;
@@ -17,6 +18,7 @@ use RoundlyConsulting\Imports\ImportsManager;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Testing\ImportsFake;
+use RoundlyConsulting\Imports\Testing\RecordedOperation;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
 use Workbench\App\Models\Asset;
 
@@ -204,4 +206,22 @@ it('declares the global alias for the facade and never a core facade name', func
     expect($aliases)->toBe([class_basename(Imports::class) => Imports::class])
         ->and(class_exists('Illuminate\\Support\\Facades\\'.$alias))->toBeFalse()
         ->and($coreAliases)->not->toContain(strtolower($alias));
+});
+
+it('records handle saves with the owner, like session saves', function (): void {
+    $fake = Imports::fake();
+    $team = team();
+    $user = admin($team);
+
+    Imports::for($team)->by($user)->mappings('assets')->save('Handle', ['Inv' => 'asset_tag']);
+    Imports::for($team)->by($user)->upload('assets', assetsCsv(assetRows(1)))->saveMapping('Session');
+
+    $saves = array_values(array_filter($fake->recorded(), static fn (RecordedOperation $r): bool => $r->operation === 'saveMapping'));
+
+    expect($saves)->toHaveCount(2)
+        ->and(array_map(static fn (RecordedOperation $r): bool => $r->context['owner']->is($team), $saves))->toBe([true, true])
+        ->and(array_map(static fn (RecordedOperation $r): ?string => $r->action, $saves))->toBe([SaveMappingAction::class, SaveMappingAction::class])
+        ->and(array_map(static fn (RecordedOperation $r): string => $r->context['importer'], $saves))->toBe(['assets', 'assets']);
+    $fake->assertMappingSaved('Handle');
+    $fake->assertMappingSaved('Session');
 });

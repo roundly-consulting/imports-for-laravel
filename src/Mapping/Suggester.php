@@ -32,10 +32,11 @@ final class Suggester
         $fields = $importer->fields();
         $assigned = [];
 
-        if ($saved !== null && ! HeaderNormalizer::collide($headers, $locale)) {
+        if ($saved !== null && ! HeaderNormalizer::collide($headers)) {
             $known = array_flip(array_map(static fn ($f): string => $f->name, $fields));
 
-            foreach ($normalized as $index => $header) {
+            // Saved mappings are keyed locale-independently (see HeaderNormalizer::signature()).
+            foreach (HeaderNormalizer::all($headers) as $index => $header) {
                 $field = $saved->columns[$header] ?? null;
 
                 if ($field !== null && isset($known[$field]) && ! in_array($field, $assigned, true)) {

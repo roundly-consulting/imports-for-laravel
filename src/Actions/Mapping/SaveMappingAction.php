@@ -4,25 +4,22 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Imports\Actions\Mapping;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Imports\DataTransferObjects\SavedMapping;
+use RoundlyConsulting\Imports\DataTransferObjects\SaveMappingData;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
 use RoundlyConsulting\Imports\Events\MappingSaved;
-use RoundlyConsulting\Imports\Exceptions\InvalidMappingException;
-use RoundlyConsulting\Imports\Exceptions\TooManySavedMappingsException;
-use RoundlyConsulting\Imports\Mapping\HeaderNormalizer;
-use RoundlyConsulting\Imports\Models\ImportSession;
+use RoundlyConsulting\Imports\Exceptions\InvalidSavedMappingException;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\Access;
-use RoundlyConsulting\Imports\Support\Audits;
 use RoundlyConsulting\Imports\Support\ImportsConfig;
-use RoundlyConsulting\Imports\Support\Locales;
 use RoundlyConsulting\Imports\Support\SavedMappingStore;
 
 /**
- * Save a session's mapping under a name for its owner, by normalised header — so the next file
- * with the same headers (in any order) maps itself.
+ * Save a mapping under a name for its owner, by normalised header — so the next file with the same
+ * headers (in any order) maps itself. The one path for both a session's mapping and one given by
+ * host code: switched on, a row importer, `authorize(Upload)`, a 1–60 character name, every field
+ * known and mapped once, then stored and `MappingSaved`.
  */
 final readonly class SaveMappingAction
 {
@@ -31,46 +28,53 @@ final readonly class SaveMappingAction
         private SavedMappingStore $mappings,
     ) {}
 
-    public function execute(ImportSession $session, string $name, ?Model $actor): SavedMapping
+    public function execute(SaveMappingData $data): SavedMapping
     {
         if (! ImportsConfig::mappingsEnabled()) {
-            throw TooManySavedMappingsException::disabled();
+            throw InvalidSavedMappingException::disabled();
         }
 
-        $importer = $this->registry->rows($session->importer);
-        $owner = Audits::owner($session);
-        Access::check($importer, $actor, $owner, ImportOperation::Upload);
+        $importer = $this->registry->rows($data->importer);
+        Access::check($importer, $data->actor, $data->owner, ImportOperation::Upload);
 
-        if ($session->mapping === null || $session->mapping === []) {
-            throw InvalidMappingException::withErrors(['mapping' => [Locales::line('imports::exceptions.mapping.empty', [], $session->locale)]]);
+        $name = trim($data->name);
+
+        if ($name === '' || mb_strlen($name) > 60) {
+            throw InvalidSavedMappingException::invalidName();
         }
 
-        $headers = $session->headers;
-        $normalized = HeaderNormalizer::all($headers, $session->locale);
-        $columns = [];
+        if ($data->columns === []) {
+            throw InvalidSavedMappingException::empty();
+        }
 
-        foreach ($session->mapping as $index => $field) {
-            $header = $normalized[(int) $index] ?? '';
+        $seen = [];
 
-            if ($header !== '') {
-                $columns[$header] = $field;
+        foreach ($data->columns as $field) {
+            if ($importer->field($field) === null) {
+                throw InvalidSavedMappingException::unknownField($field);
             }
+
+            if (isset($seen[$field])) {
+                throw InvalidSavedMappingException::fieldTwice($field);
+            }
+
+            $seen[$field] = true;
         }
 
         $mapping = new SavedMapping(
-            name: trim($name),
+            name: $name,
             importer: $importer->key(),
-            columns: $columns,
-            signature: HeaderNormalizer::signature($headers, $session->locale),
-            delimiter: $session->delimiter,
-            sheet: $session->sheet,
-            headerRow: $session->header_row,
+            columns: $data->columns,
+            signature: $data->signature,
+            delimiter: $data->delimiter,
+            sheet: $data->sheet,
+            headerRow: $data->headerRow,
         );
 
-        $this->mappings->save($owner, $mapping);
-        $saved = $this->mappings->find($owner, $importer->key(), $mapping->name) ?? $mapping;
+        $this->mappings->save($data->owner, $mapping);
+        $saved = $this->mappings->find($data->owner, $importer->key(), $name) ?? $mapping;
 
-        Event::dispatch(new MappingSaved(Audits::for($session, null, $actor), $saved));
+        Event::dispatch(new MappingSaved($data->owner, $data->actor, $importer->key(), $saved, $data->sessionId));
 
         return $saved;
     }

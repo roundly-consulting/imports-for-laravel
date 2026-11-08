@@ -35,8 +35,8 @@ final readonly class SuggestMappingAction
         Access::check($importer, $actor, $owner, ImportOperation::View);
 
         $headers = $session->headers;
-        $saved = ImportsConfig::mappingsEnabled() && ! HeaderNormalizer::collide($headers, $session->locale)
-            ? $this->mappings->bySignature($owner, $importer->key(), HeaderNormalizer::signature($headers, $session->locale))
+        $saved = ImportsConfig::mappingsEnabled() && ! HeaderNormalizer::collide($headers)
+            ? $this->mappings->bySignature($owner, $importer->key(), HeaderNormalizer::signature($headers))
             : null;
 
         return Suggester::suggest($importer, $headers, SessionState::displayHeaders($session), $session->locale, $saved);

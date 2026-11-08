@@ -21,14 +21,4 @@ final class TooManySavedMappingsException extends ImportsException implements Ht
     {
         return new self(__('imports::exceptions.mappings_too_large'));
     }
-
-    public static function invalidName(): self
-    {
-        return new self(__('imports::exceptions.mapping_name'));
-    }
-
-    public static function disabled(): self
-    {
-        return new self(__('imports::exceptions.mappings_disabled'));
-    }
 }

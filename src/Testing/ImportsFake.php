@@ -51,7 +51,7 @@ final class ImportsFake extends ImportsManager
             ? parent::perform($operation, $action, $execute, $context)
             : null;
 
-        $this->recorded[] = new RecordedOperation($operation, $context, $result);
+        $this->recorded[] = new RecordedOperation($operation, $context, $result, $action);
 
         return $result;
     }

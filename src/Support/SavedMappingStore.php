@@ -72,11 +72,7 @@ final readonly class SavedMappingStore
 
     public function save(Model $owner, SavedMapping $mapping): void
     {
-        $name = trim($mapping->name);
-
-        if ($name === '' || mb_strlen($name) > 60) {
-            throw TooManySavedMappingsException::invalidName();
-        }
+        $name = $mapping->name;
 
         $this->locked($owner, function (array $all) use ($mapping, $name): array {
             $existing = $all[$mapping->importer] ?? [];

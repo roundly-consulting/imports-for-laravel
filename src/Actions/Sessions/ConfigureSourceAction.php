@@ -70,8 +70,8 @@ final readonly class ConfigureSourceAction
                 'data_rows' => $dataRows,
             ]);
 
-            $saved = ImportsConfig::mappingsEnabled() && ! HeaderNormalizer::collide($headers, $session->locale)
-                ? $this->mappings->bySignature($owner, $importer->key(), HeaderNormalizer::signature($headers, $session->locale))
+            $saved = ImportsConfig::mappingsEnabled() && ! HeaderNormalizer::collide($headers)
+                ? $this->mappings->bySignature($owner, $importer->key(), HeaderNormalizer::signature($headers))
                 : null;
 
             SessionState::applySuggestion($session, Suggester::suggest($importer, $headers, $file->displayHeaders(), $session->locale, $saved));
