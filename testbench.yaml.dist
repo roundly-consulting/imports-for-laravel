@@ -3,5 +3,35 @@
 # manifest is built from its CLI; a manifest rebuilt anywhere else (Larastan's first boot on
 # a fresh CI checkout) drops it, and once the package ships views, the `imports::`
 # views then look missing to the view-string check.
+#
+# It is also the click-through workbench (the test suite never loads it):
+#   vendor/bin/testbench workbench:build && vendor/bin/testbench serve
+#   open /login-as/1 (Acme admin) · /login-as/2 (Acme member) · /login-as/3 (Globex admin)
+#   vendor/bin/testbench queue:work   # large previews, commits and undo run on the queue
+#   vendor/bin/testbench package:purge-skeleton   # afterwards: removes the .env and database a
+#                                                 # killed serve leaves in the shared skeleton
 providers:
   - RoundlyConsulting\Imports\ImportsServiceProvider
+  - Workbench\App\Providers\WorkbenchServiceProvider
+
+migrations:
+  - workbench/database/migrations
+
+seeders:
+  - Workbench\Database\Seeders\DatabaseSeeder
+
+env:
+  - APP_ENV=local
+  - IMPORTS_ROUTES=on
+  - QUEUE_CONNECTION=database
+  - IMPORTS_QUEUE_CONNECTION=database
+
+workbench:
+  start: '/'
+  install: false
+  discovers:
+    web: true
+  build:
+    - create-sqlite-db
+    - db-wipe
+    - migrate-fresh
