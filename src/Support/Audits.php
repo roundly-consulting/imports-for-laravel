@@ -40,9 +40,17 @@ final class Audits
 
     public static function owner(ImportSession $session): Model
     {
+        return self::ownerOrNull($session) ?? throw ImportNotFoundException::session();
+    }
+
+    /**
+     * The owner, or null when it was deleted — housekeeping still closes such a session.
+     */
+    public static function ownerOrNull(ImportSession $session): ?Model
+    {
         $owner = $session->relationLoaded('owner') ? $session->getRelation('owner') : $session->owner()->getResults();
 
-        return $owner instanceof Model ? $owner : throw ImportNotFoundException::session();
+        return $owner instanceof Model ? $owner : null;
     }
 
     public static function actor(ImportSession $session): ?Model

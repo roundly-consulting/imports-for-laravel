@@ -32,9 +32,19 @@ final readonly class FailImportAction
         }
 
         $session = $batch->session;
+        $owner = Audits::ownerOrNull($session);
+        $failure = ['reason' => $reason, 'message' => $message === null ? null : mb_substr($message, 0, 500)];
 
-        $this->scope->run(Audits::owner($session), static function () use ($batch, $session, $reason, $message): void {
-            Batches::close($batch, BatchStatus::Failed, ['reason' => $reason, 'message' => $message === null ? null : mb_substr($message, 0, 500)]);
+        // An owner deleted mid-commit: the batch still closes and the lock goes; there is no
+        // owner context to run in and no owner for the event.
+        if ($owner === null) {
+            Batches::close($batch, BatchStatus::Failed, $failure);
+
+            return;
+        }
+
+        $this->scope->run($owner, static function () use ($batch, $session, $reason, $failure): void {
+            Batches::close($batch, BatchStatus::Failed, $failure);
 
             Event::dispatch(new ImportFailed(Audits::for($session->refresh(), $batch, Audits::committer($batch)), $reason, ImportSummary::fromArray($batch->counts)));
         });

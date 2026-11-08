@@ -40,7 +40,8 @@ final readonly class FinishRollbackAction
             Batches::cancel($batch->rollback_batch_id);
         }
 
-        $this->scope->run(Audits::owner($session), static function () use ($batch, $session, $failure): void {
+        $owner = Audits::ownerOrNull($session);
+        $finish = static function () use ($batch, $session, $failure, $owner): void {
             $report = RollbackReports::build($batch);
             $now = Clock::now();
 
@@ -65,9 +66,22 @@ final readonly class FinishRollbackAction
                 'updated_at' => Clock::format($now),
             ]);
 
+            // An owner deleted mid-undo: no owner for the event's audit.
+            if ($owner === null) {
+                return;
+            }
+
             $audit = Audits::for($session->refresh(), $batch, Audits::rollbackActor($batch));
 
             Event::dispatch($failure === null ? new ImportRolledBack($audit, $report) : new ImportRollbackFailed($audit, $failure));
-        });
+        };
+
+        if ($owner === null) {
+            $finish();
+
+            return;
+        }
+
+        $this->scope->run($owner, $finish);
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Imports\Actions\Maintenance;
 
+use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Bus;
@@ -49,7 +51,7 @@ final readonly class SweepImportsAction
             ->where('expires_at', '<', $now)
             ->chunkById(200, function ($sessions) use (&$expired): void {
                 foreach ($sessions as $session) {
-                    if ($this->expire($session)) {
+                    if (self::guarded(fn (): bool => $this->expire($session))) {
                         $expired++;
                     }
                 }
@@ -66,31 +68,12 @@ final readonly class SweepImportsAction
             ->get();
 
         foreach ($stuck as $session) {
-            $batch = $session->batch;
+            $outcome = self::guarded(fn (): ?string => $this->release($session, $abandoned));
 
-            if ($batch === null) {
-                ImportModels::session()::query()->whereKey($session->getKey())->update(['status' => SessionStatus::Failed->value, 'lock_key' => null]);
+            if ($outcome === 'commit') {
                 $failedCommits++;
-
-                continue;
-            }
-
-            $rollingBack = $session->status === SessionStatus::RollingBack;
-            $laravelId = $rollingBack ? $batch->rollback_batch_id : $batch->laravel_batch_id;
-            $laravel = $laravelId === null ? null : Bus::findBatch($laravelId);
-            $dead = $laravel === null || $laravel->finished() || $laravel->cancelled() || $laravel->hasFailures();
-            $abandon = $session->last_progress_at === null || $session->last_progress_at->lessThan($abandoned);
-
-            if (! $dead && ! $abandon) {
-                continue;
-            }
-
-            if ($rollingBack) {
-                $this->container->make(FinishRollbackAction::class)->execute(Keys::of($batch), 'abandoned');
+            } elseif ($outcome === 'rollback') {
                 $failedRollbacks++;
-            } else {
-                $this->container->make(FailImportAction::class)->execute(Keys::of($batch), 'abandoned');
-                $failedCommits++;
             }
         }
 
@@ -104,7 +87,7 @@ final readonly class SweepImportsAction
         foreach ($validating as $session) {
             $abandon = $session->last_progress_at === null || $session->last_progress_at->lessThan($abandoned);
 
-            if (($abandon || ! self::validationPending($session)) && $this->failPreview($session)) {
+            if (($abandon || ! self::validationPending($session)) && self::guarded(fn (): bool => $this->failPreview($session))) {
                 $failedPreviews++;
             }
         }
@@ -112,6 +95,61 @@ final readonly class SweepImportsAction
         $temp = TempFiles::sweep(ImportsConfig::tmpTtl());
 
         return new SweepReport($expired, $failedCommits, $failedRollbacks, $temp, $failedPreviews);
+    }
+
+    /**
+     * One session's housekeeping: an error is reported and the sweep carries on with the next
+     * session, so one broken session (an owner deleted mid-commit) never stalls the others.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $work
+     * @return TResult|null
+     */
+    private static function guarded(Closure $work): mixed
+    {
+        try {
+            return $work();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
+    }
+
+    /**
+     * Fail a stuck commit or undo once its job batch is dead or it is abandoned: `commit` or
+     * `rollback` for what was failed, null when it is left running.
+     */
+    private function release(ImportSession $session, CarbonImmutable $abandoned): ?string
+    {
+        $batch = $session->batch;
+
+        if ($batch === null) {
+            ImportModels::session()::query()->whereKey($session->getKey())->update(['status' => SessionStatus::Failed->value, 'lock_key' => null]);
+
+            return 'commit';
+        }
+
+        $rollingBack = $session->status === SessionStatus::RollingBack;
+        $laravelId = $rollingBack ? $batch->rollback_batch_id : $batch->laravel_batch_id;
+        $laravel = $laravelId === null ? null : Bus::findBatch($laravelId);
+        $dead = $laravel === null || $laravel->finished() || $laravel->cancelled() || $laravel->hasFailures();
+        $abandon = $session->last_progress_at === null || $session->last_progress_at->lessThan($abandoned);
+
+        if (! $dead && ! $abandon) {
+            return null;
+        }
+
+        if ($rollingBack) {
+            $this->container->make(FinishRollbackAction::class)->execute(Keys::of($batch), 'abandoned');
+
+            return 'rollback';
+        }
+
+        $this->container->make(FailImportAction::class)->execute(Keys::of($batch), 'abandoned');
+
+        return 'commit';
     }
 
     /**
@@ -156,14 +194,17 @@ final readonly class SweepImportsAction
         }
 
         $session->refresh();
-        Event::dispatch(new ImportPreviewFailed(Audits::for($session, null, Audits::actor($session)), 'abandoned'));
+
+        if (Audits::ownerOrNull($session) !== null) {
+            Event::dispatch(new ImportPreviewFailed(Audits::for($session, null, Audits::actor($session)), 'abandoned'));
+        }
 
         return true;
     }
 
     /**
      * Expire an uncommitted session — unless a commit took it after the query above read it — and
-     * only then delete its files.
+     * only then delete its files. No event when its owner is gone: the audit names the owner.
      */
     private function expire(ImportSession $session): bool
     {
@@ -189,7 +230,9 @@ final readonly class SweepImportsAction
             report($exception);
         }
 
-        Event::dispatch(new ImportExpired(Audits::for($session, null, null)));
+        if (Audits::ownerOrNull($session) !== null) {
+            Event::dispatch(new ImportExpired(Audits::for($session, null, null)));
+        }
 
         return true;
     }

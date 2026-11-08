@@ -3,13 +3,19 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
+use RoundlyConsulting\Imports\Enums\RollbackStatus;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
+use RoundlyConsulting\Imports\Events\ImportFailed;
 use RoundlyConsulting\Imports\Exceptions\ImportStateException;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
+use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
 use Workbench\App\Hooks;
@@ -167,4 +173,76 @@ it('C-2: a refused re-preview keeps the working copy; an accepted one deletes it
 
     expect(Storage::disk('imports')->exists($otherCopy))->toBeFalse()
         ->and($other->model()->refresh()->working_copy_path)->toBeNull();
+});
+
+it('C-3: imports:sweep fails a commit whose owner was deleted, and handles every other session', function (): void {
+    $a = team();
+    $b = team();
+    $first = uploadAssets($a, admin($a), assetsCsv(assetRows(2)))->preview();
+    $second = uploadAssets($b, admin($b), assetsCsv(assetRows(2)))->preview();
+    $expiring = uploadAssets($a, admin($a), assetsCsv(assetRows(2)));
+    config(['queue.default' => 'database']);
+    $first->commit();
+    $second->commit();
+    $a->delete();
+
+    Carbon::setTestNow(now()->addDays(10));
+    expect(Artisan::call('imports:sweep'))->toBe(0);
+    Carbon::setTestNow();
+
+    $sessions = ImportSession::query()->withTrashed()->get()->keyBy('id');
+
+    expect($sessions[$first->id()]->status)->toBe(SessionStatus::Failed)
+        ->and($sessions[$first->id()]->lock_key)->toBeNull()
+        ->and($sessions[$second->id()]->status)->toBe(SessionStatus::Failed)
+        ->and($sessions[$second->id()]->lock_key)->toBeNull()
+        ->and($sessions[$expiring->id()]->status)->toBe(SessionStatus::Expired);
+});
+
+it('C-3: an undo whose owner was deleted is finished by imports:sweep', function (): void {
+    config(['imports.commit.chunk_size' => 1]);
+    $team = team();
+    $batch = uploadAssets($team, admin($team), assetsCsv(assetRows(2)))->preview()->commit();
+    config(['imports.preview.sync_threshold' => 0, 'queue.default' => 'database']);
+    $batch->rollback();
+    $team->delete();
+
+    Carbon::setTestNow(now()->addDays(10));
+    expect(Artisan::call('imports:sweep'))->toBe(0);
+    Carbon::setTestNow();
+
+    $model = ImportBatch::query()->findOrFail($batch->id());
+
+    expect($model->rollback_status)->toBe(RollbackStatus::RollbackFailed)
+        ->and($model->session->lock_key)->toBeNull()
+        ->and($model->session->status)->toBe(SessionStatus::RollbackFailed);
+});
+
+it('C-3: an error on one session is reported and the sweep carries on', function (): void {
+    Exceptions::fake();
+    $a = team();
+    $b = team();
+    $first = uploadAssets($a, admin($a), assetsCsv(assetRows(2)))->preview();
+    $second = uploadAssets($b, admin($b), assetsCsv(assetRows(2)))->preview();
+    config(['queue.default' => 'database']);
+    $first->commit();
+    $second->commit();
+    $thrown = false;
+
+    Event::listen(ImportFailed::class, static function () use (&$thrown): void {
+        if (! $thrown) {
+            $thrown = true;
+
+            throw new RuntimeException('listener broke');
+        }
+    });
+
+    Carbon::setTestNow(now()->addDays(10));
+    $report = Imports::sweep();
+    Carbon::setTestNow();
+
+    Exceptions::assertReported(static fn (RuntimeException $e): bool => $e->getMessage() === 'listener broke');
+
+    expect($report->failedCommits)->toBe(1)
+        ->and(ImportSession::query()->where('status', SessionStatus::Failed->value)->count())->toBe(2);
 });
