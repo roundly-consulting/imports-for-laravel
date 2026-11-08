@@ -87,6 +87,13 @@ final class Numbers
         }
 
         $thousands = $decimal === '.' ? ',' : '.';
+        $integer = explode($decimal, $value, 2)[0];
+
+        // Thousands separators must group by three (`1.234.567`), never `1.2.3`.
+        if (str_contains($integer, $thousands) && preg_match('/^[+-]?\d{1,3}('.preg_quote($thousands, '/').'\d{3})+$/', $integer) !== 1) {
+            return null;
+        }
+
         $value = str_replace($thousands, '', $value);
         $value = str_replace($decimal, '.', $value);
 

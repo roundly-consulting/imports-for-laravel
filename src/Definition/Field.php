@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Imports\Enums\FieldType;
 use RoundlyConsulting\Imports\Reading\Cell;
 use RoundlyConsulting\Imports\Support\Locales;
+use Stringable;
 
 /**
  * One column an importer understands. Fluent and immutable — every call returns a copy:
@@ -44,7 +45,7 @@ final class Field
     /** @var array<string, list<string>> locale (`*` = every locale) => aliases */
     public private(set) array $aliases = [];
 
-    /** @var list<string|ValidationRule|LegacyRule|Closure> */
+    /** @var list<string|Stringable|ValidationRule|LegacyRule|Closure> */
     public private(set) array $rules = [];
 
     public private(set) ?Closure $normalizer = null;
@@ -200,7 +201,7 @@ final class Field
         });
     }
 
-    public function rules(string|ValidationRule|LegacyRule|Closure ...$rules): self
+    public function rules(string|Stringable|ValidationRule|LegacyRule|Closure ...$rules): self
     {
         return $this->with(static function (self $field) use ($rules): void {
             foreach ($rules as $rule) {
