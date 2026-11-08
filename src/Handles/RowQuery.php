@@ -73,6 +73,12 @@ final readonly class RowQuery
             return new LengthAwarePaginator($items, $this->session->count('creates'), $perPage, $page);
         }
 
+        if ($this->filter->field !== null) {
+            $matching = iterator_to_array($this->cursor(), false);
+
+            return new LengthAwarePaginator(array_slice($matching, ($page - 1) * $perPage, $perPage), count($matching), $perPage, $page);
+        }
+
         $paginator = $this->query()->orderBy('row_number')->paginate($perPage, ['*'], 'page', $page);
         $results = array_values(array_map($this->result(...), $paginator->items()));
 
@@ -97,15 +103,19 @@ final readonly class RowQuery
         }
 
         foreach ($this->query()->orderBy('row_number')->cursor() as $row) {
-            yield $this->result($row);
+            if ($this->filter->field === null || in_array($this->filter->field, array_column($row->errors ?? [], 'field'), true)) {
+                yield $this->result($row);
+            }
         }
     }
 
     public function count(): int
     {
-        return $this->filter->listsCreates() && $this->session->kind === ImportKind::Rows
-            ? $this->session->count('creates')
-            : $this->query()->count();
+        return match (true) {
+            $this->filter->listsCreates() && $this->session->kind === ImportKind::Rows => $this->session->count('creates'),
+            $this->filter->field !== null => count(iterator_to_array($this->cursor(), false)),
+            default => $this->query()->count(),
+        };
     }
 
     /**
@@ -121,10 +131,6 @@ final readonly class RowQuery
 
         if ($this->filter->outcome !== null) {
             $query->where('outcome', $this->filter->outcome->value);
-        }
-
-        if ($this->filter->field !== null) {
-            $query->where('errors', 'like', '%"field":"'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $this->filter->field).'"%');
         }
 
         return $query;
