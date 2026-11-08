@@ -6,6 +6,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 
 ## Unreleased
 
+## 1.0.1 - 2026-11-08
+
 ### Added
 
 - `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
@@ -13,7 +15,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 ### Changed
 
 - **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-- **Breaking:** `ImportSession::count(string $key)` and `ImportBatch::count(string $key)` are renamed `countOf(string $key)`. The old name hid Eloquent's static `count()`, so `ImportSession::count()` and `ImportBatch::count()` threw "Non-static method … cannot be called statically"; they count rows again.
+- **Breaking:** `ImportSession::count(string $key)` and `ImportBatch::count(string $key)` are renamed `countOf(string $key)`. The old name hid Eloquent's static `count()`, so `ImportSession::count()` and `ImportBatch::count()` threw "Non-static method … cannot be called statically"; they count rows again. To upgrade, call `countOf($key)` where you called `count($key)` on a session or batch. Released as a patch by owner decision: 1.0.0 was published hours earlier.
 
 ### Fixed
 
@@ -26,136 +28,6 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 - `imports:sweep` no longer stops on a commit or undo whose owner was deleted: the run is failed and its lock released (without its event, which names the owner), and an error on one session is reported while the sweep carries on with the others — before, every run threw and no other stuck session, lost validation or temp directory was cleaned up.
 - `imports:sweep` no longer gives up on an undo that is still running: every undo chunk now counts as progress (an undo longer than `sessions.abandon_after` was abandoned), and a failed undo chunk ends the undo only once its job batch has finished (one early failure stopped the remaining chunks after `sessions.stale_after`).
 - Under `Imports::fake()->withoutRunning()`, `mappings(…)->delete()` returns `true` and the delete-mapping endpoint answers 200 instead of 404.
-
-### Added
-
-- `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
-
-### Changed
-
-- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-- An importer's `limits()` cell length is enforced (`too_long`); only `imports.limits.cell_length` was checked.
-- A reference field with a `default()` and no mapped column is looked up from its default. Before, the preview accepted the rows and every one failed at commit (`Undefined array key`); a default that finds nothing now fails the rows in the preview (`unknown_reference`).
-- Changing the source, mapping or mode, previewing again, discarding or expiring a session can no longer overwrite a commit that took it a moment earlier (another tab or worker): the change re-reads the session under a row lock and throws `ImportStateException`. Before, a remap emptied the running commit's plan (the batch completed with 0 rows) and a discard deleted its file and left the import lock held for good. A mode change also refuses a preview that moved meanwhile, and files are deleted only after the change is saved.
-- `imports:sweep` no longer stops on a commit or undo whose owner was deleted: the run is failed and its lock released (without its event, which names the owner), and an error on one session is reported while the sweep carries on with the others — before, every run threw and no other stuck session, lost validation or temp directory was cleaned up.
-- `imports:sweep` no longer gives up on an undo that is still running: every undo chunk now counts as progress (an undo longer than `sessions.abandon_after` was abandoned), and a failed undo chunk ends the undo only once its job batch has finished (one early failure stopped the remaining chunks after `sessions.stale_after`).
-- Under `Imports::fake()->withoutRunning()`, `mappings(…)->delete()` returns `true` and the delete-mapping endpoint answers 200 instead of 404.
-
-### Added
-
-- `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
-
-### Changed
-
-- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-- An importer's `limits()` cell length is enforced (`too_long`); only `imports.limits.cell_length` was checked.
-- A reference field with a `default()` and no mapped column is looked up from its default. Before, the preview accepted the rows and every one failed at commit (`Undefined array key`); a default that finds nothing now fails the rows in the preview (`unknown_reference`).
-- Changing the source, mapping or mode, previewing again, discarding or expiring a session can no longer overwrite a commit that took it a moment earlier (another tab or worker): the change re-reads the session under a row lock and throws `ImportStateException`. Before, a remap emptied the running commit's plan (the batch completed with 0 rows) and a discard deleted its file and left the import lock held for good. A mode change also refuses a preview that moved meanwhile, and files are deleted only after the change is saved.
-- `imports:sweep` no longer stops on a commit or undo whose owner was deleted: the run is failed and its lock released (without its event, which names the owner), and an error on one session is reported while the sweep carries on with the others — before, every run threw and no other stuck session, lost validation or temp directory was cleaned up.
-- `imports:sweep` no longer gives up on an undo that is still running: every undo chunk now counts as progress (an undo longer than `sessions.abandon_after` was abandoned), and a failed undo chunk ends the undo only once its job batch has finished (one early failure stopped the remaining chunks after `sessions.stale_after`).
-
-### Added
-
-- `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
-
-### Changed
-
-- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-- An importer's `limits()` cell length is enforced (`too_long`); only `imports.limits.cell_length` was checked.
-- A reference field with a `default()` and no mapped column is looked up from its default. Before, the preview accepted the rows and every one failed at commit (`Undefined array key`); a default that finds nothing now fails the rows in the preview (`unknown_reference`).
-- Changing the source, mapping or mode, previewing again, discarding or expiring a session can no longer overwrite a commit that took it a moment earlier (another tab or worker): the change re-reads the session under a row lock and throws `ImportStateException`. Before, a remap emptied the running commit's plan (the batch completed with 0 rows) and a discard deleted its file and left the import lock held for good. A mode change also refuses a preview that moved meanwhile, and files are deleted only after the change is saved.
-- `imports:sweep` no longer stops on a commit or undo whose owner was deleted: the run is failed and its lock released (without its event, which names the owner), and an error on one session is reported while the sweep carries on with the others — before, every run threw and no other stuck session, lost validation or temp directory was cleaned up.
-
-### Added
-
-- `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
-
-### Changed
-
-- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-- An importer's `limits()` cell length is enforced (`too_long`); only `imports.limits.cell_length` was checked.
-- A reference field with a `default()` and no mapped column is looked up from its default. Before, the preview accepted the rows and every one failed at commit (`Undefined array key`); a default that finds nothing now fails the rows in the preview (`unknown_reference`).
-- Changing the source, mapping or mode, previewing again, discarding or expiring a session can no longer overwrite a commit that took it a moment earlier (another tab or worker): the change re-reads the session under a row lock and throws `ImportStateException`. Before, a remap emptied the running commit's plan (the batch completed with 0 rows) and a discard deleted its file and left the import lock held for good. A mode change also refuses a preview that moved meanwhile, and files are deleted only after the change is saved.
-
-### Added
-
-- `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
-
-### Changed
-
-- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-- An importer's `limits()` cell length is enforced (`too_long`); only `imports.limits.cell_length` was checked.
-- A reference field with a `default()` and no mapped column is looked up from its default. Before, the preview accepted the rows and every one failed at commit (`Undefined array key`); a default that finds nothing now fails the rows in the preview (`unknown_reference`).
-
-### Added
-
-- `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
-
-### Changed
-
-- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-- An importer's `limits()` cell length is enforced (`too_long`); only `imports.limits.cell_length` was checked.
-
-### Changed
-
-- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
-- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
-
-### Fixed
-
-- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
 
 ## 1.0.0 - 2026-11-08
 
