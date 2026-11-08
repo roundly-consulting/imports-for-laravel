@@ -570,7 +570,8 @@ final class ImportsConfig
     }
 
     /**
-     * Uploads per minute per user (and owner) through the JSON API; 0 = no limit.
+     * Uploads per minute per authenticated user (per IP without one) through the JSON API — one
+     * budget across every owner the user imports for; 0 = no limit.
      */
     public static function uploadLimit(): int
     {

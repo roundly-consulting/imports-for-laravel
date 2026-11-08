@@ -168,7 +168,7 @@ return [
     'resources' => [
         // How an import's owner, actor and imported record render. Point a key at your own
         // JsonResource to add a name or avatar: owner and actor receive the model, record receives
-        // an ImportedRecordView (the stored morph pair, so a deleted record keeps rendering).
+        // a RecordReference (type + id from the ledger, so a deleted record keeps rendering).
         'owner' => ImportOwnerResource::class,
         'actor' => ImportActorResource::class,
         'record' => ImportRecordResource::class,
@@ -179,7 +179,8 @@ return [
         'enabled' => env('IMPORTS_ROUTES') ?: 'off',
         'prefix' => 'api/imports',
         'middleware' => ['api', 'auth'],
-        // Uploads per minute per user and owner (both upload endpoints); 0 = no limit.
+        // Uploads per minute per authenticated user, or per IP without one (both upload endpoints,
+        // one budget across owners); 0 = no limit.
         'upload_limit' => env('IMPORTS_UPLOAD_LIMIT', 10),
         // A Contracts\ResolvesImportOwner class; null = the authenticated user owns its imports.
         'owner_resolver' => null,

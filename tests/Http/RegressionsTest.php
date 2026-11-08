@@ -48,3 +48,27 @@ it('F-8: the error report of a file batch downloads over the API', function (): 
 
     expect($this->get("/api/imports/sessions/{$id}/error-report?format=csv")->assertOk()->streamedContent())->toContain('a.exe');
 });
+
+// Dual review 2026-11-08, O-13 = F-5 + F-6: the config comments promised an upload budget "per user
+// and owner" (it is per user, or per IP for guests) and an `ImportedRecordView` for the record
+// resource (it receives a `RecordReference`).
+
+it('O-13: the config comments describe the upload budget and the record resource as they work', function (): void {
+    $config = (string) file_get_contents(dirname(__DIR__, 2).'/config/imports.php');
+    $docblock = (string) file_get_contents(dirname(__DIR__, 2).'/src/Support/ImportsConfig.php');
+
+    expect($config)->not->toContain('ImportedRecordView')->and($config)->toContain('RecordReference')
+        ->and($config)->not->toContain('per user and owner')->and($docblock)->not->toContain('per user (and owner)');
+
+    // The budget really is per user: one user's spent budget leaves a teammate's untouched.
+    config()->set('imports.routes.upload_limit', 1);
+    $team = team();
+    $upload = fn () => $this->post('/api/imports/importers/assets/sessions', ['file' => assetsCsv(assetRows(1))], ['Accept' => 'application/json']);
+
+    $this->actingAs(admin($team));
+    $upload()->assertCreated();
+    $upload()->assertTooManyRequests();
+
+    $this->actingAs(admin($team));
+    $upload()->assertCreated();
+});
