@@ -157,6 +157,33 @@ test('the_template_hint_and_example_rows_are_skipped', function (string $locale)
     expect($session->counts()->templateRows)->toBe(2)->and($session->counts()->valid)->toBe(1)->and($session->counts()->total)->toBe(1);
 })->with(['en', 'sk']);
 
+test('an_example_valued_row_beyond_the_template_rows_imports', function (): void {
+    $team = team();
+    $lines = explode("\r\n", trim((string) file_get_contents(Imports::template('assets', TemplateFormat::Csv, 'en')->toTemporaryFile())));
+    // Header, two real rows (the template window), then a row that happens to equal the examples.
+    $content = $lines[0]."\r\nAST-8,SN-8,Real row,active,2026-01-15,10.00,no,,\r\nAST-9,SN-9,Real row,active,2026-01-15,10.00,no,,\r\n".$lines[2]."\r\n";
+
+    $session = uploadAssets($team, admin($team), SpreadsheetFactory::file('assets.csv', $content))->preview();
+
+    expect($session->counts()->templateRows)->toBe(0)->and($session->counts()->valid)->toBe(3)
+        ->and($session->rows(RowFilter::creates())->count())->toBe(3);
+
+    $session->commit();
+
+    expect(Asset::query()->count())->toBe(3);
+});
+
+test('a_blank_line_before_the_example_row_is_still_a_template_row', function (): void {
+    $team = team();
+    $lines = explode("\r\n", trim((string) file_get_contents(Imports::template('assets', TemplateFormat::Csv, 'en')->toTemporaryFile())));
+    // The hint row deleted and a blank line left in its place.
+    $content = $lines[0]."\r\n,,,,,,,,\r\n".$lines[2]."\r\nAST-9,SN-9,Real row,active,2026-01-15,10.00,no,,\r\n";
+
+    $session = uploadAssets($team, admin($team), SpreadsheetFactory::file('assets.csv', $content))->preview();
+
+    expect($session->counts()->templateRows)->toBe(1)->and($session->counts()->valid)->toBe(1);
+});
+
 test('five_hundred_rows_validate_in_the_request', function (): void {
     Bus::fake([ValidatePreviewJob::class]);
     $team = team();

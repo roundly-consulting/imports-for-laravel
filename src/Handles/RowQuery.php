@@ -171,22 +171,32 @@ final readonly class RowQuery
         $offsets = $this->session->chunk_offsets ?? [];
         [$offset, $first] = $offsets[0] ?? [0, $this->session->header_row + 1];
 
+        $fields = [];
+
+        foreach ($importer->fields() as $field) {
+            $fields[$field->name] = $field;
+        }
+
+        $expectations = TemplateRows::expectations($fields);
+
         try {
             $chunk = [];
             $last = 0;
+            $position = 0;
 
             foreach (SessionRows::from($this->session, (int) $offset, (int) $first, $temp, $importer->limits()->columns) as $number => $cells) {
                 $chunk[$number] = $cells;
                 $last = $number;
 
                 if (count($chunk) >= 500) {
-                    yield from $this->createsIn($importer, $mapping, $chunk);
+                    yield from $this->createsIn($expectations, $mapping, $chunk, $position);
+                    $position += count($chunk);
                     $chunk = [];
                 }
             }
 
             if ($chunk !== [] || $last === 0) {
-                yield from $this->createsIn($importer, $mapping, $chunk);
+                yield from $this->createsIn($expectations, $mapping, $chunk, $position);
             }
         } finally {
             TempFiles::remove($temp);
@@ -194,11 +204,12 @@ final readonly class RowQuery
     }
 
     /**
+     * @param  list<array<string, string>>  $expectations
      * @param  array<int, string>  $mapping
      * @param  array<int, list<Cell|null>>  $rows
      * @return Generator<int, RowResult>
      */
-    private function createsIn(Importer $importer, array $mapping, array $rows): Generator
+    private function createsIn(array $expectations, array $mapping, array $rows, int $firstPosition): Generator
     {
         if ($rows === []) {
             return;
@@ -209,6 +220,8 @@ final readonly class RowQuery
         foreach (ImportModels::rowResult()::query()->where('session_id', $this->session->getKey())->whereBetween('row_number', [min(array_keys($rows)), max(array_keys($rows))])->get() as $result) {
             $stored[$result->row_number] = $result;
         }
+
+        $window = array_fill_keys(TemplateRows::window($rows, $firstPosition), true);
 
         foreach ($rows as $number => $cells) {
             $result = $stored[$number] ?? null;
@@ -227,7 +240,7 @@ final readonly class RowQuery
                 $byField[$field] = $cells[$index] ?? null;
             }
 
-            if (! TemplateRows::isTemplateRow($importer, $byField)) {
+            if (! isset($window[$number]) || ! TemplateRows::matches($expectations, $byField)) {
                 yield new RowResult($number, RowStatus::Valid, RowOutcome::Create);
             }
         }

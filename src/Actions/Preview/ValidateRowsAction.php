@@ -34,6 +34,7 @@ use RoundlyConsulting\Imports\Support\SessionFiles;
 use RoundlyConsulting\Imports\Support\SessionState;
 use RoundlyConsulting\Imports\Support\TempFiles;
 use RoundlyConsulting\Imports\Support\WorkingCopy;
+use RoundlyConsulting\Imports\Templates\TemplateRows;
 use Throwable;
 
 /**
@@ -123,7 +124,7 @@ final readonly class ValidateRowsAction
                 $processed++;
 
                 if (count($buffer) >= $window) {
-                    $this->window($session, $importer, $pipeline, $buffer, $seen, $counts);
+                    $this->window($session, $importer, $pipeline, $buffer, $processed - count($buffer), $seen, $counts);
                     $buffer = [];
                 }
 
@@ -133,7 +134,7 @@ final readonly class ValidateRowsAction
             }
 
             if ($buffer !== []) {
-                $this->window($session, $importer, $pipeline, $buffer, $seen, $counts);
+                $this->window($session, $importer, $pipeline, $buffer, $processed - count($buffer), $seen, $counts);
             }
 
             $working?->close();
@@ -205,11 +206,11 @@ final readonly class ValidateRowsAction
      * @param  array<int, list<Cell|null>>  $rows
      * @param  array<string, int>  $counts
      */
-    private function window(ImportSession $session, Importer $importer, RowPipeline $pipeline, array $rows, InFileKeys $seen, array &$counts): void
+    private function window(ImportSession $session, Importer $importer, RowPipeline $pipeline, array $rows, int $firstPosition, InFileKeys $seen, array &$counts): void
     {
         $results = [];
 
-        foreach ($pipeline->evaluate($rows, $seen) as $evaluation) {
+        foreach ($pipeline->evaluate($rows, $seen, TemplateRows::window($rows, $firstPosition)) as $evaluation) {
             if ($evaluation->templateRow) {
                 $counts['template_rows']++;
 

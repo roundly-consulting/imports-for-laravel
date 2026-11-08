@@ -43,6 +43,9 @@ final class RowPipeline
     /** @var array<int, string> column index => field */
     private array $columns;
 
+    /** @var list<array<string, string>>|null */
+    private ?array $templateExpectations = null;
+
     private readonly CellNormalizer $normalizer;
 
     /**
@@ -70,15 +73,17 @@ final class RowPipeline
 
     /**
      * @param  array<int, list<Cell|null>>  $rows  row number => cells
+     * @param  list<int>  $templateWindow  the row numbers that may be the template's hint/example rows
      * @return list<RowEvaluation>
      */
-    public function evaluate(array $rows, InFileKeys $seen): array
+    public function evaluate(array $rows, InFileKeys $seen, array $templateWindow = []): array
     {
-        return Locales::using($this->locale, function () use ($rows, $seen): array {
+        return Locales::using($this->locale, function () use ($rows, $seen, $templateWindow): array {
             $evaluations = [];
+            $window = array_fill_keys($templateWindow, true);
 
             foreach ($rows as $number => $cells) {
-                $evaluations[] = $this->row($number, $cells);
+                $evaluations[] = $this->row($number, $cells, isset($window[$number]));
             }
 
             $this->resolveReferences($evaluations);
@@ -110,7 +115,7 @@ final class RowPipeline
     /**
      * @param  list<Cell|null>  $cells
      */
-    private function row(int $number, array $cells): RowEvaluation
+    private function row(int $number, array $cells, bool $mayBeTemplate): RowEvaluation
     {
         $mapped = [];
 
@@ -120,7 +125,7 @@ final class RowPipeline
 
         $evaluation = new RowEvaluation($number, $mapped, $cells);
 
-        if (TemplateRows::isTemplateRow($this->importer, $mapped)) {
+        if ($mayBeTemplate && TemplateRows::matches($this->templateExpectations ??= TemplateRows::expectations($this->fields), $mapped)) {
             $evaluation->templateRow = true;
 
             return $evaluation;

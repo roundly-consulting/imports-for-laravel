@@ -54,6 +54,7 @@ use RoundlyConsulting\Imports\Support\Locales;
 use RoundlyConsulting\Imports\Support\SessionRows;
 use RoundlyConsulting\Imports\Support\SessionState;
 use RoundlyConsulting\Imports\Support\TempFiles;
+use RoundlyConsulting\Imports\Templates\TemplateRows;
 use Throwable;
 
 /**
@@ -156,7 +157,9 @@ final readonly class ProcessChunkAction
             $context = new ImportContext($owner, Audits::committer($batch), $importer, Keys::of($session), Keys::of($batch), $session->mode, $session->locale, $session->timezone, $this->scope);
             $written = [];
 
-            foreach ($pending === [] ? [] : $pipeline->evaluate($pending, new InFileKeys) as $evaluation) {
+            $window = TemplateRows::window($rows, $index * max(1, $session->chunk_size ?? 1));
+
+            foreach ($pending === [] ? [] : $pipeline->evaluate($pending, new InFileKeys, $window) as $evaluation) {
                 if ($evaluation->templateRow) {
                     continue;
                 }

@@ -70,35 +70,46 @@ final class TemplateRows
         return is_scalar($value) || $value === null ? $value : null;
     }
 
+    /** A template puts at most this many rows (hint, example) under its header. */
+    public const int WINDOW = 2;
+
     /**
-     * Whether a data row is the template's hint row (in any shipped locale) or its unchanged
-     * example row.
+     * What a hint row (in any shipped locale) or an unchanged example row holds, per field — built
+     * once per pipeline, not per row.
      *
+     * @param  array<string, Field>  $fields  field name => field
+     * @return list<array<string, string>> field name => canonical value, one map per candidate row
+     */
+    public static function expectations(array $fields): array
+    {
+        $expectations = [array_map(static fn (Field $field): string => self::canonical(self::example($field)), $fields)];
+
+        foreach (Locales::matching() as $locale) {
+            $expectations[] = array_map(static fn (Field $field): string => self::canonical(self::hint($field, $locale)), $fields);
+        }
+
+        return $expectations;
+    }
+
+    /**
+     * Whether a data row is one of the template's own rows. Only the first {@see self::WINDOW}
+     * non-blank data rows can be: a real row further down that happens to equal the examples
+     * imports.
+     *
+     * @param  list<array<string, string>>  $expectations
      * @param  array<string, Cell|null>  $cells  field => cell, the mapped fields only
      */
-    public static function isTemplateRow(Importer $importer, array $cells): bool
+    public static function matches(array $expectations, array $cells): bool
     {
         if ($cells === [] || array_filter($cells) === []) {
             return false;
         }
 
-        $fields = [];
-
-        foreach ($importer->fields() as $field) {
-            $fields[$field->name] = $field;
-        }
-
-        $candidates = [static fn (Field $field): string => self::canonical(self::example($field))];
-
-        foreach (Locales::matching() as $locale) {
-            $candidates[] = static fn (Field $field): string => self::canonical(self::hint($field, $locale));
-        }
-
-        foreach ($candidates as $expected) {
+        foreach ($expectations as $expected) {
             $matches = true;
 
             foreach ($cells as $name => $cell) {
-                if (! isset($fields[$name]) || self::canonical($cell?->display()) !== $expected($fields[$name])) {
+                if (! isset($expected[$name]) || self::canonical($cell?->display()) !== $expected[$name]) {
                     $matches = false;
 
                     break;
@@ -111,6 +122,18 @@ final class TemplateRows
         }
 
         return false;
+    }
+
+    /**
+     * The row numbers of a run of rows (in file order, blank rows already skipped) that fall in the
+     * template window, given the position of the run's first row among the file's data rows.
+     *
+     * @param  array<int, mixed>  $rows  row number => cells
+     * @return list<int>
+     */
+    public static function window(array $rows, int $firstPosition): array
+    {
+        return $firstPosition >= self::WINDOW ? [] : array_slice(array_keys($rows), 0, self::WINDOW - $firstPosition);
     }
 
     private static function canonical(string|int|float|bool|null $value): string
