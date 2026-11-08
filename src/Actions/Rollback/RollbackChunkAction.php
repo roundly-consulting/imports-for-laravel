@@ -71,6 +71,9 @@ final readonly class RollbackChunkAction
             foreach ($ledgers as $ledger) {
                 $this->undo($batch, $definition, $context, $owner, $ledger);
             }
+
+            // Progress for imports:sweep, as each commit chunk reports it: a long undo is not abandoned.
+            ImportModels::session()::query()->whereKey($batch->session_id)->update(['last_progress_at' => Clock::format(Clock::now())]);
         });
     }
 

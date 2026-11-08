@@ -119,7 +119,8 @@ final readonly class SweepImportsAction
 
     /**
      * Fail a stuck commit or undo once its job batch is dead or it is abandoned: `commit` or
-     * `rollback` for what was failed, null when it is left running.
+     * `rollback` for what was failed, null when it is left running. An undo's batch allows
+     * failures, so a failed chunk is not the end of it while the others still run.
      */
     private function release(ImportSession $session, CarbonImmutable $abandoned): ?string
     {
@@ -134,7 +135,7 @@ final readonly class SweepImportsAction
         $rollingBack = $session->status === SessionStatus::RollingBack;
         $laravelId = $rollingBack ? $batch->rollback_batch_id : $batch->laravel_batch_id;
         $laravel = $laravelId === null ? null : Bus::findBatch($laravelId);
-        $dead = $laravel === null || $laravel->finished() || $laravel->cancelled() || $laravel->hasFailures();
+        $dead = $laravel === null || $laravel->finished() || $laravel->cancelled() || (! $rollingBack && $laravel->hasFailures());
         $abandon = $session->last_progress_at === null || $session->last_progress_at->lessThan($abandoned);
 
         if (! $dead && ! $abandon) {

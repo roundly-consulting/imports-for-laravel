@@ -246,3 +246,38 @@ it('C-3: an error on one session is reported and the sweep carries on', function
     expect($report->failedCommits)->toBe(1)
         ->and(ImportSession::query()->where('status', SessionStatus::Failed->value)->count())->toBe(2);
 });
+
+it('C-9: imports:sweep leaves a progressing undo with one failed chunk alone', function (): void {
+    config(['imports.commit.chunk_size' => 1]);
+    $team = team();
+    $batch = uploadAssets($team, admin($team), assetsCsv(assetRows(4)))->preview()->commit();
+    config(['imports.preview.sync_threshold' => 0, 'queue.default' => 'database']);
+    $start = Carbon::now()->startOfSecond();
+    Carbon::setTestNow($start);
+    $batch->rollback();
+    $sessionId = $batch->model()->session_id;
+
+    // One undo chunk runs a little later, then a worker reports a failed job of the batch.
+    Carbon::setTestNow($start->copy()->addMinutes(5));
+    Artisan::call('queue:work', ['connection' => 'database', '--queue' => 'default,imports', '--once' => true, '--sleep' => 0]);
+
+    expect(ImportSession::query()->findOrFail($sessionId)->last_progress_at?->equalTo($start->copy()->addMinutes(5)))->toBeTrue()
+        ->and(Asset::query()->count())->toBe(3);
+
+    // A worker fails one chunk for good: its job leaves the queue and counts as failed.
+    DB::table('jobs')->where('id', DB::table('jobs')->min('id'))->delete();
+    DB::table('job_batches')->where('id', $batch->model()->refresh()->rollback_batch_id)->update(['failed_jobs' => 1, 'failed_job_ids' => json_encode(['lost'])]);
+
+    Carbon::setTestNow($start->copy()->addMinutes(36));
+    Artisan::call('imports:sweep');
+    Carbon::setTestNow();
+
+    expect(ImportSession::query()->findOrFail($sessionId)->status)->toBe(SessionStatus::RollingBack)
+        ->and($batch->model()->refresh()->rollback_status)->toBe(RollbackStatus::RollingBack);
+
+    drainQueue();
+
+    // The other chunks ran; the batch finished with its failure, which the undo then reports.
+    expect(Asset::query()->count())->toBe(1)
+        ->and($batch->model()->refresh()->rollback_status)->toBe(RollbackStatus::RollbackFailed);
+});
