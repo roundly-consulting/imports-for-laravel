@@ -44,6 +44,11 @@ final readonly class Limits
         return new self($this->fileSizeKb, $this->rows, max(1, min($columns, ImportsConfig::MAX_COLUMNS_CEILING)), $this->cellLength);
     }
 
+    public function withCellLength(int $characters): self
+    {
+        return new self($this->fileSizeKb, $this->rows, $this->columns, max(1, min($characters, ImportsConfig::CELL_LENGTH_CEILING)));
+    }
+
     public function fileSizeBytes(): int
     {
         return $this->fileSizeKb * 1024;

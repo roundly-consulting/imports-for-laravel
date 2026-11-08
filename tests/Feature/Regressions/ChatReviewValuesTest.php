@@ -2,14 +2,24 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
 use RoundlyConsulting\Imports\Definition\Field;
+use RoundlyConsulting\Imports\Definition\Limits;
+use RoundlyConsulting\Imports\Definition\Ownership;
+use RoundlyConsulting\Imports\Enums\ImportOperation;
+use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
+use RoundlyConsulting\Imports\Importer;
 use RoundlyConsulting\Imports\Pipeline\CellNormalizer;
 use RoundlyConsulting\Imports\Reading\Cell;
+use RoundlyConsulting\Imports\Rows\ImportContext;
+use RoundlyConsulting\Imports\Rows\ImportRow;
 use RoundlyConsulting\Imports\Support\Numbers;
+use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
+use Workbench\App\Models\Asset;
 
 // claude.ai chat review 2026-11-08 — the value-pipeline findings (C-1, C-4, C-5, C-7, C-8, V-1).
 
@@ -44,6 +54,44 @@ final class ChatReviewDatetimeInvite extends Model
     protected function casts(): array
     {
         return ['accepted_at' => 'datetime'];
+    }
+}
+
+final class ChatReviewShortCellsImporter extends Importer
+{
+    public function key(): string
+    {
+        return 'short-cells';
+    }
+
+    public function model(): string
+    {
+        return Asset::class;
+    }
+
+    public function ownership(): Ownership
+    {
+        return Ownership::column('team_id');
+    }
+
+    public function limits(): Limits
+    {
+        return new Limits(10240, 10000, 100, 255);
+    }
+
+    public function fields(): array
+    {
+        return [Field::text('name')->required()];
+    }
+
+    public function authorize(?Authenticatable $user, Model $owner, ImportOperation $operation): bool
+    {
+        return true;
+    }
+
+    public function create(ImportRow $row, ImportContext $context): Model
+    {
+        return Asset::create([...$row->attributes(), ...$context->ownerAttributes()]);
     }
 }
 
@@ -111,4 +159,18 @@ it('C-5: a date-time value reaches the importer in the app timezone; a date stay
     $invite = ChatReviewDatetimeInvite::query()->create(['team_id' => team()->id, 'email' => 'a@example.com', 'role' => 'member', 'accepted_at' => $at]);
 
     expect(DB::table('invitations')->where('id', $invite->id)->value('accepted_at'))->toBe('2026-01-15 08:30:00');
+});
+
+it("C-8: a cell longer than the importer's limits() cell length is too_long", function (): void {
+    Imports::register(ChatReviewShortCellsImporter::class);
+    $team = team();
+
+    $session = Imports::for($team)->by(admin($team))->upload('short-cells', SpreadsheetFactory::csv(['Name'], [[str_repeat('a', 255)], [str_repeat('a', 256)]]))->preview();
+
+    expect($session->counts()->valid)->toBe(1)
+        ->and($session->counts()->invalid)->toBe(1)
+        ->and(chatErrorCodes($session))->toBe(['too_long'])
+        ->and(Limits::fromConfig()->withCellLength(255)->cellLength)->toBe(255)
+        ->and(Limits::fromConfig()->withCellLength(0)->cellLength)->toBe(1)
+        ->and(Limits::fromConfig()->withCellLength(5_000_000)->cellLength)->toBe(1_048_576);
 });

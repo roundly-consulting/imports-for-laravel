@@ -66,7 +66,7 @@ final class RowPipeline
         bool $date1904 = false,
     ) {
         $this->columns = $mapping;
-        $this->normalizer = CellNormalizer::forSession($locale, $timezone, $date1904);
+        $this->normalizer = CellNormalizer::forSession($locale, $timezone, $date1904, $importer->limits()->cellLength);
 
         foreach ($importer->fields() as $field) {
             $this->fields[$field->name] = $field;

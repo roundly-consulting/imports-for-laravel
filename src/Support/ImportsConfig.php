@@ -32,6 +32,8 @@ final class ImportsConfig
 
     public const int MAX_COLUMNS_CEILING = 16_384;
 
+    public const int CELL_LENGTH_CEILING = 1_048_576;
+
     // Key types ----------------------------------------------------------------------------
 
     public static function keyType(): KeyType
@@ -197,7 +199,7 @@ final class ImportsConfig
 
     public static function cellLength(): int
     {
-        return Config::integer('imports.limits.cell_length', 32767, min: 1, max: 1_048_576);
+        return Config::integer('imports.limits.cell_length', 32767, min: 1, max: self::CELL_LENGTH_CEILING);
     }
 
     // CSV / XLSX ----------------------------------------------------------------------------

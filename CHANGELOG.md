@@ -6,6 +6,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 
 ## Unreleased
 
+### Added
+
+- `Limits::withCellLength()`, to set an importer's cell length in `limits()` like the other limits (1 … 1,048,576).
+
+### Changed
+
+- **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).
+
+### Fixed
+
+- A cell holding a number with a huge exponent (`1e999999999`) no longer exhausts memory and kills the request or queue worker during a preview: exponents beyond ±400 are not expanded, so the cell is reported (`invalid_number`, `invalid_integer`, `invalid_choice`) or, in a text field, kept as written.
+- Choice fields match a cell as typed before reading it as a number, so codes like `01` or `1.50` are accepted instead of `invalid_choice`; a number cell `1.0` still matches option `1`.
+- `Field::choice()->options([1 => 'Male', 2 => 'Female'])` keeps its numeric codes as the values; it was read as a list, so the labels were stored and `1` was refused. Only an array with keys 0, 1, 2, … is a list of values.
+- An importer's `limits()` cell length is enforced (`too_long`); only `imports.limits.cell_length` was checked.
+
 ### Changed
 
 - **Behaviour change:** DateTime field values are converted from the session timezone (`imports.values.timezone`) to `app.timezone` before they reach the importer, so Eloquent stores the instant the file meant: `2026-01-15 09:30` read in `Europe/Bratislava` with `app.timezone` UTC was stored as `09:30` and is now `08:30`. Date fields are unchanged, and so is the default setup (`values.timezone` blank = `app.timezone`).

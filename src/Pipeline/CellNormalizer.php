@@ -45,10 +45,11 @@ final class CellNormalizer
     /**
      * @param  bool  $date1904  the workbook's date system: a plain number mapped to a date field is
      *                          a serial of that system
+     * @param  int|null  $cellLength  the importer's `limits()->cellLength` (default: the config's)
      */
-    public static function forSession(string $locale, string $timezone, bool $date1904 = false): self
+    public static function forSession(string $locale, string $timezone, bool $date1904 = false, ?int $cellLength = null): self
     {
-        return new self($locale, $timezone, ImportsConfig::cellLength(), ImportsConfig::dateFormats(), ImportsConfig::datetimeFormats(), $date1904, ImportsConfig::appTimezone());
+        return new self($locale, $timezone, $cellLength ?? ImportsConfig::cellLength(), ImportsConfig::dateFormats(), ImportsConfig::datetimeFormats(), $date1904, ImportsConfig::appTimezone());
     }
 
     public function normalize(Field $field, ?Cell $cell): Coerced
