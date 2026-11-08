@@ -229,7 +229,7 @@ test('a_session_list_runs_a_fixed_number_of_queries', function (): void {
             uploadAssets($team, $user, assetsCsv(assetRows(1)));
         }
 
-        $list = Imports::for($team)->sessions()->with(['owner', 'actor', 'batch'])->get();
+        $list = Imports::for($team)->by($user)->sessions()->with(['owner', 'actor', 'batch'])->get();
         Database::flushQueryLog();
         Database::enableQueryLog();
         ImportSessionResource::collection($list)->toResponse(request());
@@ -239,5 +239,5 @@ test('a_session_list_runs_a_fixed_number_of_queries', function (): void {
         return $queries;
     };
 
-    expect($count(2))->toBe($count(5));
+    expect($count(2))->toBe($count(5))->and(Imports::for($team)->by($user)->sessions()->count())->toBe(7);
 });

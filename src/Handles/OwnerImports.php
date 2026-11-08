@@ -13,10 +13,14 @@ use RoundlyConsulting\Imports\Actions\Sessions\UploadImportAction;
 use RoundlyConsulting\Imports\DataTransferObjects\ImportSource;
 use RoundlyConsulting\Imports\DataTransferObjects\UploadData;
 use RoundlyConsulting\Imports\DataTransferObjects\UploadFilesData;
+use RoundlyConsulting\Imports\Definition\ImportDefinition;
+use RoundlyConsulting\Imports\Enums\ImportOperation;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Exceptions\ImportNotFoundException;
 use RoundlyConsulting\Imports\ImportsManager;
 use RoundlyConsulting\Imports\Models\ImportSession;
+use RoundlyConsulting\Imports\Registry\ImporterRegistry;
+use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\ImportModels;
 
 /**
@@ -71,17 +75,24 @@ final readonly class OwnerImports
     }
 
     /**
+     * The owner's sessions the actor may view: with `$importer`, that importer's (refused unless the
+     * actor may view it); without, those of every importer whose authorize() allows `View`.
+     *
      * @return Builder<ImportSession>
      */
     public function sessions(?string $importer = null, SessionStatus ...$status): Builder
     {
-        $query = ImportModels::session()::query()
-            ->where('owner_type', $this->owner->getMorphClass())
-            ->where('owner_id', $this->owner->getKey())
-            ->latest('id');
+        $registry = $this->manager->container()->make(ImporterRegistry::class);
+        $query = $this->scope();
 
         if ($importer !== null) {
+            Access::check($registry->find($importer), $this->actor, $this->owner, ImportOperation::View);
             $query->where('importer', $importer);
+        } else {
+            $query->whereIn('importer', array_map(
+                static fn (ImportDefinition $definition): string => $definition->key(),
+                $registry->available($this->actor instanceof Authenticatable ? $this->actor : null, $this->owner),
+            ));
         }
 
         if ($status !== []) {
@@ -93,7 +104,7 @@ final readonly class OwnerImports
 
     public function session(int|string $id): SessionHandle
     {
-        $session = $this->sessions()->whereKey($id)->first() ?? throw ImportNotFoundException::session();
+        $session = $this->scope()->whereKey($id)->first() ?? throw ImportNotFoundException::session();
         $session->setRelation('owner', $this->owner);
 
         return new SessionHandle($this->manager, $session, $this->actor);
@@ -101,8 +112,8 @@ final readonly class OwnerImports
 
     public function batch(int|string $id): BatchHandle
     {
-        $batch = ImportModels::batch()::query()->whereKey($id)->whereIn('session_id', $this->sessions()->withTrashed()->select('id'))->first()
-            ?? throw ImportNotFoundException::session();
+        $batch = ImportModels::batch()::query()->whereKey($id)->whereIn('session_id', $this->scope()->withTrashed()->select('id'))->first()
+            ?? throw ImportNotFoundException::batch();
 
         return new BatchHandle($this->manager, $batch, $this->actor);
     }
@@ -120,5 +131,18 @@ final readonly class OwnerImports
         $session = $this->sessions($importer, SessionStatus::Committing, SessionStatus::RollingBack)->first();
 
         return $session === null ? null : new SessionHandle($this->manager, $session, $this->actor);
+    }
+
+    /**
+     * Every session of this owner — the scoping boundary, before any authorization.
+     *
+     * @return Builder<ImportSession>
+     */
+    private function scope(): Builder
+    {
+        return ImportModels::session()::query()
+            ->where('owner_type', $this->owner->getMorphClass())
+            ->where('owner_id', $this->owner->getKey())
+            ->latest('id');
     }
 }

@@ -35,19 +35,29 @@ use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\Audits;
 use RoundlyConsulting\Imports\Support\Keys;
 use RoundlyConsulting\Imports\Support\SessionState;
+use RoundlyConsulting\Imports\Support\Verdicts;
 use RoundlyConsulting\Imports\Templates\Template;
 
 /**
  * One import session: source, mapping, mode, preview, commit. Mutators return the handle, so the
  * flow chains: `->map([...])->saveMapping('ERP')->mode(DuplicateMode::Update)->preview()`.
+ *
+ * Every operation asks the importer's authorize() about the handle's actor: reads as `View`
+ * (asked once per handle), writes as their own operation. A `null` actor is system code, and the
+ * host's authorize() decides what it may do. `model()` and `id()` are plain accessors.
  */
 final readonly class SessionHandle
 {
+    private Verdicts $verdicts;
+
     public function __construct(
         private ImportsManager $manager,
         private ImportSession $session,
         private ?Model $actor = null,
-    ) {}
+        ?Verdicts $verdicts = null,
+    ) {
+        $this->verdicts = $verdicts ?? new Verdicts;
+    }
 
     /**
      * The same session, acting as `$actor` (authorization is checked per operation).
@@ -69,6 +79,8 @@ final readonly class SessionHandle
 
     public function status(): SessionStatus
     {
+        $this->authorize(ImportOperation::View);
+
         return $this->session->refresh()->status;
     }
 
@@ -77,6 +89,8 @@ final readonly class SessionHandle
      */
     public function sheets(): array
     {
+        $this->authorize(ImportOperation::View);
+
         return array_map(static fn (array $sheet): SheetInfo => new SheetInfo($sheet['name'], $sheet['index'], $sheet['visible']), $this->session->sheets ?? []);
     }
 
@@ -87,6 +101,8 @@ final readonly class SessionHandle
      */
     public function headers(): array
     {
+        $this->authorize(ImportOperation::View);
+
         return SessionState::displayHeaders($this->session);
     }
 
@@ -147,6 +163,8 @@ final readonly class SessionHandle
 
     public function counts(): ImportCounts
     {
+        $this->authorize(ImportOperation::View);
+
         return ImportCounts::fromArray($this->session->refresh()->counts);
     }
 
@@ -166,11 +184,12 @@ final readonly class SessionHandle
 
     public function progress(): Progress
     {
+        $this->authorize(ImportOperation::View);
         $session = $this->session->refresh();
         $batch = $session->batch;
 
         if ($batch !== null && $session->status === SessionStatus::Committing) {
-            return new BatchHandle($this->manager, $batch, $this->actor)->progress();
+            return new BatchHandle($this->manager, $batch, $this->actor, $this->verdicts)->progress();
         }
 
         return new Progress($session->processed_rows, $session->data_rows, $session->progress, 'preview');
@@ -218,9 +237,10 @@ final readonly class SessionHandle
 
     public function batch(): ?BatchHandle
     {
+        $this->authorize(ImportOperation::View);
         $batch = $this->session->batch()->first();
 
-        return $batch === null ? null : new BatchHandle($this->manager, $batch, $this->actor);
+        return $batch === null ? null : new BatchHandle($this->manager, $batch, $this->actor, $this->verdicts);
     }
 
     private function configure(string|int|null $sheet, ?string $delimiter, ?int $headerRow): self
@@ -232,7 +252,11 @@ final readonly class SessionHandle
 
     private function authorize(ImportOperation $operation): void
     {
-        $definition = $this->manager->container()->make(ImporterRegistry::class)->find($this->session->importer);
-        Access::check($definition, $this->actor, Audits::owner($this->session), $operation);
+        $this->verdicts->check($operation, fn (): bool => Access::allows(
+            $this->manager->container()->make(ImporterRegistry::class)->find($this->session->importer),
+            $this->actor,
+            Audits::owner($this->session),
+            $operation,
+        ));
     }
 }

@@ -110,7 +110,7 @@ class ImportsManager
      */
     public function batch(ImportBatch|int|string $batch): BatchHandle
     {
-        $model = $batch instanceof ImportBatch ? $batch : (ImportModels::batch()::query()->find($batch) ?? throw ImportNotFoundException::session());
+        $model = $batch instanceof ImportBatch ? $batch : (ImportModels::batch()::query()->find($batch) ?? throw ImportNotFoundException::batch());
 
         return new BatchHandle($this, $model);
     }

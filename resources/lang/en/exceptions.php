@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 return [
     'not_found' => 'The import was not found.',
+    'batch_not_found' => 'The import run was not found.',
     'unknown_importer' => 'There is no importer [:importer].',
     'unauthorized' => 'You are not allowed to :operation this import.',
     'undo_window_closed' => 'This import can no longer be undone.',

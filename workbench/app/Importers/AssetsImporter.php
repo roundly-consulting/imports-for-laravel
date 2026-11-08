@@ -83,6 +83,12 @@ final class AssetsImporter extends Importer
 
     public function authorize(?Authenticatable $user, Model $owner, ImportOperation $operation): bool
     {
+        Hooks::$authorized[] = $operation->value;
+
+        if (Hooks::$authorize !== null) {
+            return (bool) (Hooks::$authorize)($operation->value);
+        }
+
         return $user instanceof User && $user->is_admin && $user->team_id === $owner->getKey();
     }
 

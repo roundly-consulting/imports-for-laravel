@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 return [
     'not_found' => 'Import sa nenašiel.',
+    'batch_not_found' => 'Beh importu sa nenašiel.',
     'unknown_importer' => 'Import [:importer] neexistuje.',
     'unauthorized' => 'Na operáciu :operation s týmto importom nemáte oprávnenie.',
     'undo_window_closed' => 'Tento import už nemožno vrátiť.',

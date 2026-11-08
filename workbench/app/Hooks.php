@@ -17,6 +17,16 @@ final class Hooks
 
     public static ?Closure $onCreate = null;
 
+    /**
+     * Every operation the assets importer's authorize() was asked about.
+     *
+     * @var list<string>
+     */
+    public static array $authorized = [];
+
+    /** Overrides the assets importer's authorize() when set: fn (string $operation): bool. */
+    public static ?Closure $authorize = null;
+
     public static function call(string $what, int $row): void
     {
         self::$calls[] = $what.':'.$row;
@@ -30,6 +40,8 @@ final class Hooks
     {
         self::$calls = [];
         self::$onCreate = null;
+        self::$authorized = [];
+        self::$authorize = null;
         Importers\AssetsImporter::$changeDetection = null;
         Importers\DocumentsImporter::$duplicates = null;
     }

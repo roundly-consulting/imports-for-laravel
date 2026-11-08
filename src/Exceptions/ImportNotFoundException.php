@@ -16,4 +16,9 @@ final class ImportNotFoundException extends ImportsException implements HttpExce
     {
         return new self(__('imports::exceptions.not_found'));
     }
+
+    public static function batch(): self
+    {
+        return new self(__('imports::exceptions.batch_not_found'));
+    }
 }

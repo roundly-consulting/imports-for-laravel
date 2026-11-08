@@ -32,8 +32,8 @@ test('a_session_of_another_owner_is_not_found', function (): void {
     expect(fn () => Imports::for($mine)->session($session->id()))->toThrow(ImportNotFoundException::class)
         ->and(fn () => Imports::for($mine)->session('999999'))->toThrow(ImportNotFoundException::class)
         ->and(Imports::for($theirs)->session($session->id())->id())->toBe($session->id())
-        ->and(Imports::for($mine)->sessions()->count())->toBe(0)
-        ->and(Imports::for($theirs)->sessions('assets')->count())->toBe(1);
+        ->and(Imports::for($mine)->by(admin($mine))->sessions()->count())->toBe(0)
+        ->and(Imports::for($theirs)->by(admin($theirs))->sessions('assets')->count())->toBe(1);
 });
 
 test('a_batch_of_another_owner_is_not_found', function (): void {

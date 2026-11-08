@@ -59,7 +59,7 @@ it('reaches sessions and batches through the trusted path and model conveniences
     expect(Imports::session($model)->id())->toBe($model->id)
         ->and(Imports::session((string) $model->id)->model()->is($model))->toBeTrue()
         ->and(Imports::batch($batch->id())->model()->is($batch->model()))->toBeTrue()
-        ->and(ImportBatch::query()->firstOrFail()->handle()->summary()->created)->toBe(1)
+        ->and(ImportBatch::query()->firstOrFail()->handle()->by(admin($team))->summary()->created)->toBe(1)
         ->and($handle->batch()?->id())->toBe($batch->id())
         ->and($batch->session()->id())->toBe($model->id)
         ->and($model->rowResults()->count())->toBe(0)
@@ -79,7 +79,7 @@ it('reads progress, summary and records through the handles', function (): void 
         ->and($batch->summary()->durationSeconds)->toBeInt()
         ->and($batch->records()->count())->toBe(2)
         ->and($session->batch()?->status())->toBe(BatchStatus::Completed)
-        ->and(Imports::for($team)->running('assets'))->toBeNull();
+        ->and(Imports::for($team)->by(admin($team))->running('assets'))->toBeNull();
 });
 
 it('records facade, injected and model-convenience calls under the fake', function (): void {

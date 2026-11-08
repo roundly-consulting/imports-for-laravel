@@ -65,7 +65,10 @@ final class SessionsController extends Controller
 
     public function show(Request $request, string $session): JsonResponse
     {
-        return self::session($this->scoped($request)->session($session));
+        $handle = $this->scoped($request)->session($session);
+        $handle->status();   // asks authorize(View) before anything renders
+
+        return self::session($handle);
     }
 
     public function source(SourceRequest $request, string $session): JsonResponse

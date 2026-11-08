@@ -299,7 +299,7 @@ test('two_concurrent_commits_for_one_owner_and_importer_admit_one', function ():
     }
 
     expect($second->status())->toBe(SessionStatus::Previewed)
-        ->and(Imports::for($team)->running('assets')?->id())->toBe($first->id());
+        ->and(Imports::for($team)->by($user)->running('assets')?->id())->toBe($first->id());
 });
 
 test('different_owners_import_in_parallel', function (): void {
@@ -311,7 +311,7 @@ test('different_owners_import_in_parallel', function (): void {
     uploadAssets($b, admin($b), assetsCsv(assetRows(1)))->preview()->commit();
 
     expect(ImportSession::query()->where('status', SessionStatus::Committing)->count())->toBe(2)
-        ->and(Imports::for($a)->running('people'))->toBeNull();
+        ->and(Imports::for($a)->by(admin($a))->running('people'))->toBeNull();
 });
 
 test('a_double_commit_starts_one_batch', function (): void {
@@ -348,7 +348,7 @@ test('a_batch_whose_actor_lost_access_fails_unauthorized', function (): void {
     $user->forceFill(['is_admin' => false])->save();
     drainQueue();
 
-    expect($batch->status())->toBe(BatchStatus::Failed)
+    expect($batch->model()->refresh()->status)->toBe(BatchStatus::Failed)
         ->and($batch->model()->failure['reason'] ?? null)->toBe('unauthorized')
         ->and(Asset::query()->count())->toBe(0);
     Event::assertDispatchedTimes(ImportFailed::class, 1);

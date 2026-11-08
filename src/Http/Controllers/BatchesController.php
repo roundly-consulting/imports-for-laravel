@@ -42,7 +42,7 @@ final class BatchesController extends Controller
     {
         $action = $request->validated('action');
         $perPage = $request->validated('per_page');
-        $records = $this->scoped($request)->batch($batch)
+        $records = $this->scoped($request)->batch($batch)   // records() asks authorize(View)
             ->records(is_string($action) ? RecordAction::from($action) : null)
             ->paginate(is_numeric($perPage) ? (int) $perPage : 50);
 
