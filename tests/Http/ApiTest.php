@@ -16,6 +16,7 @@ use RoundlyConsulting\Imports\Http\Resources\References;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Support\ImportsConfig;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
+use Workbench\App\Hooks;
 use Workbench\App\Models\Asset;
 use Workbench\Database\Factories\AssetFactory;
 
@@ -240,4 +241,69 @@ test('a_session_list_runs_a_fixed_number_of_queries', function (): void {
     };
 
     expect($count(2))->toBe($count(5))->and(Imports::for($team)->by($user)->sessions()->count())->toBe(7);
+});
+
+test('the_api_lists_the_owners_sessions', function (): void {
+    $team = team();
+    $user = admin($team);
+    $first = uploadAssets($team, $user, assetsCsv(assetRows(1)));
+    $second = uploadAssets($team, $user, assetsCsv(assetRows(2)))->preview();
+
+    $this->actingAs($user);
+    $all = $this->getJson('/api/imports/sessions')->assertOk();
+
+    expect($all->json('data.*.id'))->toBe([$second->id(), $first->id()])
+        ->and($all->json('meta.total'))->toBe(2)
+        ->and($all->json('data.0.owner'))->toBe(['id' => $team->id, 'type' => 'Team']);
+
+    $this->getJson('/api/imports/sessions?status[]=previewed&importer=assets&per_page=1')->assertOk()
+        ->assertJsonPath('data.0.id', $second->id())->assertJsonPath('meta.total', 1);
+    $this->getJson('/api/imports/sessions?status[]=nope')->assertUnprocessable()->assertJsonValidationErrors(['status.0']);
+    $this->getJson('/api/imports/sessions?importer=nope')->assertNotFound();
+});
+
+test('the_session_list_hides_importers_the_user_may_not_view', function (): void {
+    $team = team();
+    $user = admin($team);
+    uploadAssets($team, $user, assetsCsv(assetRows(1)));
+    Imports::for($team)->by($user)->upload('people', SpreadsheetFactory::csv(['Email', 'Role'], [['a@example.com', 'member']]));
+    Hooks::$authorize = static fn (string $operation): bool => $operation !== 'view';
+
+    $this->actingAs($user);
+
+    expect($this->getJson('/api/imports/sessions')->assertOk()->json('data.*.importer.key'))->toBe(['people']);
+    $this->getJson('/api/imports/sessions?importer=assets')->assertForbidden();
+});
+
+test('the_session_list_runs_a_fixed_number_of_queries', function (): void {
+    $team = team();
+    $user = admin($team);
+    $this->actingAs($user);
+    $this->getJson('/api/imports/sessions')->assertOk();   // warm-up: the first request resolves the user and the registry
+
+    $count = function (int $sessions) use ($team, $user): int {
+        foreach (range(1, $sessions) as $i) {
+            uploadAssets($team, $user, assetsCsv(assetRows(1)));
+        }
+
+        Database::flushQueryLog();
+        Database::enableQueryLog();
+        $this->getJson('/api/imports/sessions?per_page=100')->assertOk();
+        $queries = count(Database::getQueryLog());
+        Database::disableQueryLog();
+
+        return $queries;
+    };
+
+    expect($count(2))->toBe($count(5));
+});
+
+test('the_session_list_never_shows_another_owners_sessions', function (): void {
+    $theirs = team();
+    uploadAssets($theirs, admin($theirs), assetsCsv(assetRows(1)));
+    $mine = team();
+
+    $this->actingAs(admin($mine));
+
+    expect($this->getJson('/api/imports/sessions')->assertOk()->json('data'))->toBe([]);
 });

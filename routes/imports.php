@@ -25,6 +25,7 @@ Route::prefix(ImportsConfig::routesPrefix())
         Route::post('importers/{importer}/sessions', [SessionsController::class, 'store'])->middleware('throttle:imports-upload')->name('sessions.store');
         Route::post('importers/{importer}/file-sessions', [SessionsController::class, 'storeFiles'])->middleware('throttle:imports-upload')->name('sessions.files');
 
+        Route::get('sessions', [SessionsController::class, 'index'])->name('sessions.index');
         Route::get('sessions/{session}', [SessionsController::class, 'show'])->name('sessions.show');
         Route::patch('sessions/{session}/source', [SessionsController::class, 'source'])->name('sessions.source');
         Route::delete('sessions/{session}', [SessionsController::class, 'destroy'])->name('sessions.destroy');

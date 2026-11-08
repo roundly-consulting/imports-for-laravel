@@ -11,10 +11,12 @@ use RoundlyConsulting\Imports\DataTransferObjects\MappingSuggestion;
 use RoundlyConsulting\Imports\DataTransferObjects\SuggestedColumn;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
 use RoundlyConsulting\Imports\Enums\RejectionReason;
+use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Exceptions\ImportFileRejectedException;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
 use RoundlyConsulting\Imports\Http\Requests\MapRequest;
 use RoundlyConsulting\Imports\Http\Requests\SaveMappingRequest;
+use RoundlyConsulting\Imports\Http\Requests\SessionsRequest;
 use RoundlyConsulting\Imports\Http\Requests\SourceRequest;
 use RoundlyConsulting\Imports\Http\Requests\UploadFilesRequest;
 use RoundlyConsulting\Imports\Http\Requests\UploadRequest;
@@ -61,6 +63,23 @@ final class SessionsController extends Controller
         $locale = $request->validated('locale');
 
         return self::session($this->scoped($request)->uploadFiles($importer, $files, is_string($locale) ? $locale : null), 201);
+    }
+
+    /**
+     * The owner's sessions the user may view, newest first — so a client can come back to one.
+     */
+    public function index(SessionsRequest $request): JsonResponse
+    {
+        $importer = $request->validated('importer');
+        $perPage = $request->validated('per_page');
+        $statuses = array_map(static fn (mixed $status): SessionStatus => SessionStatus::from(is_string($status) ? $status : ''), (array) $request->validated('status'));
+
+        $sessions = $this->scoped($request)
+            ->sessions(is_string($importer) ? $importer : null, ...$statuses)
+            ->with(['owner', 'actor', 'batch'])
+            ->paginate(is_numeric($perPage) ? (int) $perPage : 20);
+
+        return ImportSessionResource::collection($sessions)->response();
     }
 
     public function show(Request $request, string $session): JsonResponse
