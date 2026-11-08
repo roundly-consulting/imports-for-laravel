@@ -14,7 +14,7 @@ final class DoctorCommand extends Command
 {
     protected $signature = 'imports:doctor';
 
-    protected $description = 'Check the imports setup: importers, key types, job batches, queue, disk, retention, extensions, locks';
+    protected $description = 'Check the imports setup: importers, key types, job batches, queue, disk, retention, extensions, locks, the options table';
 
     public function handle(): int
     {
@@ -22,7 +22,7 @@ final class DoctorCommand extends Command
 
         foreach (Doctor::run() as $finding) {
             match ($finding->level) {
-                'ok' => $this->components->info($finding->check.': '.$finding->message),
+                'ok', 'info' => $this->components->info($finding->check.': '.$finding->message),
                 'warning' => $this->components->warn($finding->check.': '.$finding->message),
                 default => $this->components->error($finding->check.': '.$finding->message),
             };

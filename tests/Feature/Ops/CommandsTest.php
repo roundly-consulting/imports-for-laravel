@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Imports\DataTransferObjects\DoctorFinding;
 use RoundlyConsulting\Imports\Enums\BatchStatus;
@@ -14,6 +15,7 @@ use RoundlyConsulting\Imports\Enums\RollbackStatus;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Events\ImportExpired;
 use RoundlyConsulting\Imports\Events\ImportsPruned;
+use RoundlyConsulting\Imports\Exceptions\InvalidImportsConfigurationException;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
@@ -203,7 +205,18 @@ test('doctor_reports_each_misconfiguration', function (string $check, Closure $b
     'lock store' => ['lock_store', fn () => config()->set('cache.default', 'array'), 'warning'],
     'owner scope' => ['owner_scope', fn () => null, class_exists('RoundlyConsulting\Teams\TeamsServiceProvider') ? 'warning' : 'ok'],
     'migrations' => ['migrations', fn () => config()->set('imports.tables.sessions', 'nope_sessions'), 'error'],
+    'options table ok' => ['options_table', fn () => null, 'ok'],
+    'options table missing' => ['options_table', fn () => Schema::drop('options'), 'error'],
+    'mappings off' => ['options_table', fn () => config()->set('imports.mappings.enabled', 'off'), 'info'],
 ]);
+
+test('a_missing_options_table_fails_with_a_clear_configuration_error', function (): void {
+    Schema::drop('options');
+    $team = team();
+
+    expect(fn () => uploadAssets($team, admin($team), assetsCsv(assetRows(1))))
+        ->toThrow(InvalidImportsConfigurationException::class, 'php artisan vendor:publish --tag=options-migrations');
+});
 
 test('the_doctor_command_exits_by_its_findings', function (): void {
     config()->set('imports.queue.enabled', 'off');

@@ -37,6 +37,11 @@ final class InvalidImportsConfigurationException extends ImportsException
         return new self(sprintf('The %s key does not match configuration value [%s] (%s). Set [%s] to the key type of %s.', $model, $key, $type, $key, $model));
     }
 
+    public static function missingTable(string $table, string $fix): self
+    {
+        return new self(sprintf('The [%s] table is missing. Run: %s && php artisan migrate.', $table, $fix));
+    }
+
     private static function describe(mixed $value): string
     {
         return match (true) {

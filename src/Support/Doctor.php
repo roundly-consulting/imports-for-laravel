@@ -97,6 +97,14 @@ final class Doctor
             $findings[] = new DoctorFinding('owner_scope', 'error', $exception->getMessage());
         }
 
+        if (! ImportsConfig::mappingsEnabled()) {
+            $findings[] = new DoctorFinding('options_table', 'info', 'Saved mappings are switched off: the options table is not needed.');
+        } elseif (OptionsTable::exists()) {
+            $findings[] = new DoctorFinding('options_table', 'ok', sprintf('The [%s] table for saved mappings exists.', OptionsTable::name()));
+        } else {
+            $findings[] = new DoctorFinding('options_table', 'error', sprintf('The [%s] table is missing, and every upload reads saved mappings from it: php artisan vendor:publish --tag=options-migrations && php artisan migrate.', OptionsTable::name()));
+        }
+
         $sessionModel = new (ImportModels::session());
         $findings[] = Schema::connection($sessionModel->getConnectionName())->hasTable($sessionModel->getTable())
             ? new DoctorFinding('migrations', 'ok', 'The imports tables exist.')

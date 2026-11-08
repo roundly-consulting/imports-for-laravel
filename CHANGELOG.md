@@ -22,6 +22,6 @@ Initial public release.
 - Owner context as a security boundary: every lookup and write stays inside the import's owner, with a pluggable `OwnerScope` (a teams-for-laravel recipe in the docs) and one running import per owner and importer.
 - File batches (`FileImporter`): many files or a ZIP, one record per file, SHA-256 duplicate checks, hardened extraction (file count, size, compression ratio, paths, symlinks, encryption).
 - An opt-in JSON API (`imports.routes.enabled`) with FormRequests and resources that never expose class names or file paths; swappable `imports.resources.owner|actor|record`.
-- `imports:sweep`, `imports:prune`, `imports:doctor`, `imports:importers`, `imports:template` and `imports:install` commands; `about` section.
+- `imports:sweep`, `imports:prune`, `imports:doctor`, `imports:importers`, `imports:template` and `imports:install` commands; `about` section. `imports:install` also publishes options-for-laravel's migration (saved mappings live there) unless its table exists, `imports:doctor` checks that table, and a missing one fails with the command that fixes it.
 - `Imports::fake()` with assertions, and `SpreadsheetFactory` to build CSV, XLSX and ZIP uploads in tests.
 - English and Slovak translations.

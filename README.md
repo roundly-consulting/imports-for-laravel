@@ -19,6 +19,7 @@ Requires PHP 8.4 (with the `zip`, `xmlreader`, `xmlwriter` and `mbstring` extens
 
 ```bash
 composer require roundly-consulting/imports-for-laravel
+php artisan vendor:publish --tag="options-migrations"   # saved column mappings live in options-for-laravel
 php artisan vendor:publish --tag="imports-migrations"
 php artisan make:queue-batches-table   # Laravel's job_batches table, if you do not have it yet
 php artisan migrate

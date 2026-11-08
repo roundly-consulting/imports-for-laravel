@@ -7,6 +7,7 @@ namespace RoundlyConsulting\Imports\Support;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use RoundlyConsulting\Imports\DataTransferObjects\SavedMapping;
 use RoundlyConsulting\Imports\Exceptions\InvalidImportsConfigurationException;
 use RoundlyConsulting\Imports\Exceptions\TooManySavedMappingsException;
@@ -137,9 +138,36 @@ final readonly class SavedMappingStore
         $store->lock('imports:mappings:'.Digests::owner($owner), 10)->block(5, function () use ($owner, $mutate): void {
             $this->options->withoutAuthorization(function () use ($owner, $mutate): void {
                 $this->options->resolveOptionInstance(SavedMappings::class, $owner)->forgetCachedValue();
-                $this->options->set(SavedMappings::class, $mutate($this->read($owner)), $owner);
+                $all = $mutate($this->read($owner));
+                self::explainingAMissingTable(function () use ($all, $owner): bool {
+                    $this->options->set(SavedMappings::class, $all, $owner);
+
+                    return true;
+                });
             });
         });
+    }
+
+    /**
+     * A host that skipped options' publish-only migration gets the fix, not a raw SQL error. The
+     * table check runs only once a query failed, never on the happy path.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $query
+     * @return T
+     */
+    private static function explainingAMissingTable(callable $query): mixed
+    {
+        try {
+            return $query();
+        } catch (QueryException $exception) {
+            if (! OptionsTable::exists()) {
+                throw InvalidImportsConfigurationException::missingTable(OptionsTable::name(), 'php artisan vendor:publish --tag=options-migrations');
+            }
+
+            throw $exception;
+        }
     }
 
     /**
@@ -147,7 +175,7 @@ final readonly class SavedMappingStore
      */
     private function read(Model $owner): array
     {
-        $value = $this->options->withoutAuthorization(fn (): mixed => $this->options->get(SavedMappings::class, $owner));
+        $value = self::explainingAMissingTable(fn (): mixed => $this->options->withoutAuthorization(fn (): mixed => $this->options->get(SavedMappings::class, $owner)));
         $result = [];
 
         if (is_array($value)) {

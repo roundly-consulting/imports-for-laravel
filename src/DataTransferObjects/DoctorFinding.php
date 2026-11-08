@@ -10,7 +10,7 @@ namespace RoundlyConsulting\Imports\DataTransferObjects;
 final readonly class DoctorFinding
 {
     /**
-     * @param  'ok'|'warning'|'error'  $level
+     * @param  'ok'|'info'|'warning'|'error'  $level
      */
     public function __construct(
         public string $check,
