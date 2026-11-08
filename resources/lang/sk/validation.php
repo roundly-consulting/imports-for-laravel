@@ -18,6 +18,7 @@ return [
     'ambiguous_reference' => ':attribute: „:value“ zodpovedá viacerým záznamom.',
     'ambiguous_match' => 'Tomuto riadku zodpovedá viac existujúcich záznamov (:key).',
     'conflicting_match' => 'Identifikátory riadku zodpovedajú rôznym existujúcim záznamom (:key).',
+    'matches_deleted_record' => 'Tento identifikátor (:key) stále používa vymazaný záznam. Obnovte ho alebo zmeňte identifikátor.',
     'duplicate_in_file' => 'Skorší riadok súboru má rovnaký identifikátor.',
     'same_record' => 'Skorší riadok súboru zodpovedá tomu istému existujúcemu záznamu.',
     'unsaved' => 'Záznam sa neuložil.',

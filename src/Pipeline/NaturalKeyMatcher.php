@@ -35,7 +35,9 @@ final class NaturalKeyMatcher
             }
 
             foreach (array_chunk($tuples, 250) as $chunk) {
-                $query = Scoped::query($model, $owner, $rule, $scope);
+                // Soft-deleted records too: the host's unique index still covers them, so a row
+                // that "creates" one of their keys would fail at commit. The pipeline flags it.
+                $query = Scoped::query($model, $owner, $rule, $scope, true);
 
                 if (count($fields) === 1) {
                     ReferenceResolver::whereIn($query, $fields[0], array_values(array_unique(array_column($chunk, $fields[0]))), $naturalKey->caseInsensitive);

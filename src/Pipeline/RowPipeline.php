@@ -293,11 +293,19 @@ final class RowPipeline
 
             $digests = [];
             $match = null;
+            $deleted = null;
 
             foreach ($rowKeys[$position] as $candidate => $tuple) {
                 $key = implode("\x1f", $tuple);
                 $digests[] = Digests::raw($candidate."\x1e".$key);
-                $records = $found[$candidate][$key] ?? [];
+                $all = $found[$candidate][$key] ?? [];
+                $records = array_values(array_filter($all, static fn (Model $record): bool => ! self::trashed($record)));
+
+                if ($records === [] && $all !== []) {
+                    $deleted ??= $key;
+
+                    continue;
+                }
 
                 if (count($records) > 1) {
                     $evaluation->fail(null, null, 'ambiguous_match', $this->message('ambiguous_match', ['key' => $key]), $key);
@@ -316,6 +324,12 @@ final class RowPipeline
                         break;
                     }
                 }
+            }
+
+            // Only a soft-deleted record holds this key: a create would hit the host's unique index,
+            // an update or skip would target a deleted record — the row is refused, in every mode.
+            if ($evaluation->isValid() && $match === null && $deleted !== null) {
+                $evaluation->fail(null, null, 'matches_deleted_record', $this->message('matches_deleted_record', ['key' => $deleted]), $deleted);
             }
 
             if (! $evaluation->isValid()) {
@@ -339,6 +353,11 @@ final class RowPipeline
                 $evaluation->status = $match === null ? RowStatus::Valid : RowStatus::Matched;
             }
         }
+    }
+
+    private static function trashed(Model $record): bool
+    {
+        return method_exists($record, 'trashed') && $record->trashed() === true;
     }
 
     private function importRow(RowEvaluation $evaluation): ImportRow
