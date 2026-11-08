@@ -270,8 +270,8 @@ final class XlsxWriter
 
             if (isset($layout->prompts[$column])) {
                 $xml->writeAttribute('showInputMessage', '1');
-                $xml->writeAttribute('promptTitle', mb_substr(self::clean($layout->prompts[$column]['title']), 0, 32));
-                $xml->writeAttribute('prompt', mb_substr(self::clean($layout->prompts[$column]['prompt']), 0, 255));
+                $xml->writeAttribute('promptTitle', mb_substr(self::clean($layout->prompts[$column]->title), 0, 32));
+                $xml->writeAttribute('prompt', mb_substr(self::clean($layout->prompts[$column]->prompt), 0, 255));
             }
 
             $xml->writeAttribute('sqref', $letters.'2:'.$letters.($layout->validationRows + 1));

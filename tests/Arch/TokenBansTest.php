@@ -70,3 +70,21 @@ it('never uses the owner-less trusted path from HTTP code', function (): void {
         expect($source)->not->toMatch('/(Imports::|imports->|ImportsManager::)(session|batch)\(/', $path);
     }
 });
+
+it('takes and returns no shape arrays outside resources, casts and json payloads', function (): void {
+    // A json column's stored payload is the one allowed shape (CellError::stored()).
+    $allowed = ['DataTransferObjects/CellError.php'];
+    $found = [];
+
+    foreach (importsSources() as $path => $source) {
+        if (str_starts_with($path, 'Http/Resources/') || str_starts_with($path, 'Casts/') || in_array($path, $allowed, true)) {
+            continue;
+        }
+
+        if (preg_match_all('/@(param|return)\s+[^\n]*array\{/', $source, $matches) > 0) {
+            $found[] = $path;
+        }
+    }
+
+    expect($found)->toBe([]);
+});

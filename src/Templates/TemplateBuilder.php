@@ -13,6 +13,7 @@ use RoundlyConsulting\Imports\Support\ImportsConfig;
 use RoundlyConsulting\Imports\Support\Locales;
 use RoundlyConsulting\Imports\Support\TempFiles;
 use RoundlyConsulting\Imports\Xlsx\CellReference;
+use RoundlyConsulting\Imports\Xlsx\InputMessage;
 use RoundlyConsulting\Imports\Xlsx\SheetLayout;
 use RoundlyConsulting\Imports\Xlsx\XlsxWriter;
 use Throwable;
@@ -76,7 +77,7 @@ final class TemplateBuilder
                     FieldType::Integer, FieldType::Boolean => 'general',
                     default => 'text',
                 };
-                $prompts[$index] = ['title' => $field->labelIn($locale), 'prompt' => TemplateRows::hint($field, $locale)];
+                $prompts[$index] = new InputMessage($field->labelIn($locale), TemplateRows::hint($field, $locale));
 
                 if (! $validation) {
                     continue;

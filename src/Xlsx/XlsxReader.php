@@ -32,8 +32,7 @@ final class XlsxReader implements RowSource
 
     private ?SharedStrings $strings = null;
 
-    /** @var array{name: string, visible: bool, part: string} */
-    private readonly array $sheet;
+    private readonly SheetPart $sheet;
 
     public function __construct(string $path, private readonly ReadOptions $options)
     {
@@ -59,7 +58,7 @@ final class XlsxReader implements RowSource
 
     public function sheetName(): string
     {
-        return $this->sheet['name'];
+        return $this->sheet->name;
     }
 
     /**
@@ -70,7 +69,7 @@ final class XlsxReader implements RowSource
         $this->styles ??= Styles::read($this->package, $this->workbook->stylesPart);
         $this->strings ??= SharedStrings::read($this->package, $this->workbook->sharedStringsPart, $this->options->sharedStringsMemory);
 
-        $reader = $this->package->xml($this->sheet['part']);
+        $reader = $this->package->xml($this->sheet->part);
 
         if ($reader === null) {
             throw ImportFileRejectedException::because(RejectionReason::MalformedSpreadsheet);

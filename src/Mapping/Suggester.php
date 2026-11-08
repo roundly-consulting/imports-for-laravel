@@ -44,7 +44,7 @@ final class Suggester
                 }
             }
 
-            return self::result($importer, $display, array_map(static fn (string $f): array => [$f, 1.0, MappingSource::Saved], $assigned), $saved->name);
+            return self::result($importer, $display, array_map(static fn (string $f): SuggestionPick => new SuggestionPick($f, 1.0, MappingSource::Saved), $assigned), $saved->name);
         }
 
         $candidates = [];
@@ -99,11 +99,11 @@ final class Suggester
         $picked = [];
 
         foreach ($candidates as [$index, $field, $score, $source]) {
-            if (isset($picked[$index]) || in_array($field, array_column($picked, 0), true)) {
+            if (isset($picked[$index]) || in_array($field, array_map(static fn (SuggestionPick $p): string => $p->field, $picked), true)) {
                 continue;
             }
 
-            $picked[$index] = [$field, $score, $source];
+            $picked[$index] = new SuggestionPick($field, $score, $source);
         }
 
         return self::result($importer, $display, $picked, null);
@@ -111,7 +111,7 @@ final class Suggester
 
     /**
      * @param  list<string>  $display
-     * @param  array<int, array{0: string, 1: float, 2: MappingSource}>  $picked
+     * @param  array<int, SuggestionPick>  $picked  column index => pick
      */
     private static function result(Importer $importer, array $display, array $picked, ?string $saved): MappingSuggestion
     {
@@ -120,14 +120,14 @@ final class Suggester
 
         foreach ($display as $index => $header) {
             if (isset($picked[$index])) {
-                $columns[] = new SuggestedColumn($index, $header, $picked[$index][0], $picked[$index][1], $picked[$index][2]);
+                $columns[] = new SuggestedColumn($index, $header, $picked[$index]->field, $picked[$index]->confidence, $picked[$index]->source);
             } else {
                 $columns[] = new SuggestedColumn($index, $header, null, 0.0, null);
                 $ignored[] = $index;
             }
         }
 
-        $mapped = array_column($picked, 0);
+        $mapped = array_map(static fn (SuggestionPick $p): string => $p->field, $picked);
         $missing = [];
 
         foreach ($importer->fields() as $field) {

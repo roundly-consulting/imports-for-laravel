@@ -20,7 +20,7 @@ use XMLReader;
 final class Workbook
 {
     /**
-     * @param  list<array{name: string, visible: bool, part: string}>  $sheets
+     * @param  list<SheetPart>  $sheets
      */
     private function __construct(
         public readonly array $sheets,
@@ -68,7 +68,7 @@ final class Workbook
                 $part = $relationships->target($id);
 
                 if ($part !== null && $package->has($part)) {
-                    $sheets[] = ['name' => $name, 'visible' => $state === '' || $state === 'visible', 'part' => $part];
+                    $sheets[] = new SheetPart($name, $state === '' || $state === 'visible', $part);
                 }
             }
         }
@@ -92,7 +92,7 @@ final class Workbook
         $visible = 0;
 
         foreach ($this->sheets as $sheet) {
-            $infos[] = new SheetInfo($sheet['name'], $sheet['visible'] ? ++$visible : null, $sheet['visible']);
+            $infos[] = new SheetInfo($sheet->name, $sheet->visible ? ++$visible : null, $sheet->visible);
         }
 
         return $infos;
@@ -101,12 +101,10 @@ final class Workbook
     /**
      * Default = the first visible worksheet; a name matches exactly, then case-insensitively (any
      * state, hidden included); a number is the 1-based position among visible worksheets.
-     *
-     * @return array{name: string, visible: bool, part: string}
      */
-    public function select(string|int|null $sheet): array
+    public function select(string|int|null $sheet): SheetPart
     {
-        $visible = array_values(array_filter($this->sheets, static fn (array $s): bool => $s['visible']));
+        $visible = array_values(array_filter($this->sheets, static fn (SheetPart $s): bool => $s->visible));
 
         if ($sheet === null) {
             return $visible[0] ?? $this->sheets[0];
@@ -117,13 +115,13 @@ final class Workbook
         }
 
         foreach ($this->sheets as $candidate) {
-            if ($candidate['name'] === $sheet) {
+            if ($candidate->name === $sheet) {
                 return $candidate;
             }
         }
 
         foreach ($this->sheets as $candidate) {
-            if (mb_strtolower($candidate['name']) === mb_strtolower($sheet)) {
+            if (mb_strtolower($candidate->name) === mb_strtolower($sheet)) {
                 return $candidate;
             }
         }
@@ -136,7 +134,7 @@ final class Workbook
      */
     public function names(): array
     {
-        return array_map(static fn (array $sheet): string => $sheet['name'], $this->sheets);
+        return array_map(static fn (SheetPart $sheet): string => $sheet->name, $this->sheets);
     }
 
     private static function relationshipId(XMLReader $reader): ?string

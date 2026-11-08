@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use RoundlyConsulting\Imports\Contracts\OwnerScope;
+use RoundlyConsulting\Imports\DataTransferObjects\RollbackDecision;
 use RoundlyConsulting\Imports\Definition\ImportDefinition;
 use RoundlyConsulting\Imports\Enums\RecordAction;
 use RoundlyConsulting\Imports\Enums\RollbackOutcome;
@@ -96,9 +97,9 @@ final readonly class RollbackChunkAction
                     return;
                 }
 
-                [$outcome, $reason] = $this->outcome($definition, $context, $owner, $fresh);
+                $decision = $this->outcome($definition, $context, $owner, $fresh);
 
-                $fresh->forceFill(['rolled_back_at' => Clock::now(), 'rollback_outcome' => $outcome, 'rollback_reason' => $reason])->save();
+                $fresh->forceFill(['rolled_back_at' => Clock::now(), 'rollback_outcome' => $decision->outcome, 'rollback_reason' => $decision->reason])->save();
             });
         } catch (Throwable $exception) {
             if (Failures::isInfrastructure($exception)) {
@@ -110,15 +111,12 @@ final readonly class RollbackChunkAction
         }
     }
 
-    /**
-     * @return array{0: RollbackOutcome, 1: string|null}
-     */
-    private function outcome(ImportDefinition $definition, ImportContext $context, Model $owner, ImportedRecord $ledger): array
+    private function outcome(ImportDefinition $definition, ImportContext $context, Model $owner, ImportedRecord $ledger): RollbackDecision
     {
         $class = Relation::getMorphedModel($ledger->record_type) ?? $ledger->record_type;
 
         if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
-            return [RollbackOutcome::Missing, 'unknown_type'];
+            return new RollbackDecision(RollbackOutcome::Missing, 'unknown_type');
         }
 
         // Locked for the rest of the per-record transaction: an edit between this check and the
@@ -126,25 +124,25 @@ final readonly class RollbackChunkAction
         $record = Scoped::query($class, $owner, $definition->ownership(), $this->scope, true)->whereKey($ledger->record_id)->lockForUpdate()->first();
 
         if ($record === null) {
-            return [RollbackOutcome::Missing, null];
+            return new RollbackDecision(RollbackOutcome::Missing);
         }
 
         if (method_exists($record, 'trashed') && $record->trashed() === true) {
-            return [RollbackOutcome::Missing, 'already_deleted'];
+            return new RollbackDecision(RollbackOutcome::Missing, 'already_deleted');
         }
 
         if ($definition->changeDetection()->usesChecksum() && $ledger->checksum === null) {
             // The commit could not read the record back: nothing proves it unchanged.
-            return [RollbackOutcome::KeptChanged, 'no_checksum'];
+            return new RollbackDecision(RollbackOutcome::KeptChanged, 'no_checksum');
         }
 
         if ($this->changed($definition, $record, $ledger)) {
-            return [RollbackOutcome::KeptChanged, null];
+            return new RollbackDecision(RollbackOutcome::KeptChanged);
         }
 
         $outcome = $definition->rollback($record, $context);
 
-        return [in_array($outcome, [RollbackOutcome::Deleted, RollbackOutcome::Handled, RollbackOutcome::Kept], true) ? $outcome : RollbackOutcome::Kept, null];
+        return new RollbackDecision(in_array($outcome, [RollbackOutcome::Deleted, RollbackOutcome::Handled, RollbackOutcome::Kept], true) ? $outcome : RollbackOutcome::Kept);
     }
 
     private function changed(ImportDefinition $definition, Model $record, ImportedRecord $ledger): bool

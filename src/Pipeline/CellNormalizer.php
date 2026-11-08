@@ -25,7 +25,7 @@ use Throwable;
  */
 final class CellNormalizer
 {
-    /** @var array<string, array{true: list<string>, false: list<string>}> */
+    /** @var array<string, BooleanWords> */
     private static array $booleans = [];
 
     /**
@@ -163,11 +163,11 @@ final class CellNormalizer
         $word = mb_strtolower($value);
         $words = self::booleanWords();
 
-        if (in_array($word, [...$words['true'], ...array_map(mb_strtolower(...), $field->trueValues)], true)) {
+        if (in_array($word, [...$words->true, ...array_map(mb_strtolower(...), $field->trueValues)], true)) {
             return Coerced::value(true);
         }
 
-        if (in_array($word, [...$words['false'], ...array_map(mb_strtolower(...), $field->falseValues)], true)) {
+        if (in_array($word, [...$words->false, ...array_map(mb_strtolower(...), $field->falseValues)], true)) {
             return Coerced::value(false);
         }
 
@@ -247,10 +247,8 @@ final class CellNormalizer
 
     /**
      * The accepted words, from every shipped locale at once (an sk export in an en session).
-     *
-     * @return array{true: list<string>, false: list<string>}
      */
-    private static function booleanWords(): array
+    private static function booleanWords(): BooleanWords
     {
         $key = app()->getLocale();
 
@@ -274,6 +272,6 @@ final class CellNormalizer
             }
         }
 
-        return self::$booleans[$key] = ['true' => array_values(array_unique($lists['true'])), 'false' => array_values(array_unique($lists['false']))];
+        return self::$booleans[$key] = new BooleanWords(array_values(array_unique($lists['true'])), array_values(array_unique($lists['false'])));
     }
 }

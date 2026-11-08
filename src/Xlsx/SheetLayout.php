@@ -16,7 +16,7 @@ final readonly class SheetLayout
      * @param  array<int, float>  $widths  column index => width
      * @param  array<int, string>  $formats  column index => 'text'|'date'|'datetime'|'decimal:<scale>'
      * @param  array<int, string>  $lists  column index => inline list `"a,b"` or a defined name
-     * @param  array<int, array{title: string, prompt: string}>  $prompts  column index => input message
+     * @param  array<int, InputMessage>  $prompts  column index => input message
      */
     public function __construct(
         public bool $boldHeader = false,

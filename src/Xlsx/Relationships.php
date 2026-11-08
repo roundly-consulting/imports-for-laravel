@@ -16,7 +16,7 @@ use XMLReader;
 final class Relationships
 {
     /**
-     * @param  array<string, array{type: string, target: string}>  $relationships
+     * @param  array<string, Relationship>  $relationships  id => relationship
      */
     private function __construct(private readonly array $relationships) {}
 
@@ -46,7 +46,7 @@ final class Relationships
                 continue;
             }
 
-            $relationships[$id] = ['type' => self::kind($type), 'target' => self::resolve($folder, $target)];
+            $relationships[$id] = new Relationship(self::kind($type), self::resolve($folder, $target));
         }
 
         $reader->close();
@@ -57,19 +57,19 @@ final class Relationships
 
     public function target(string $id): ?string
     {
-        return $this->relationships[$id]['target'] ?? null;
+        return ($this->relationships[$id] ?? null)?->target;
     }
 
     public function type(string $id): ?string
     {
-        return $this->relationships[$id]['type'] ?? null;
+        return ($this->relationships[$id] ?? null)?->type;
     }
 
     public function firstOfType(string $kind): ?string
     {
         foreach ($this->relationships as $relationship) {
-            if ($relationship['type'] === $kind) {
-                return $relationship['target'];
+            if ($relationship->type === $kind) {
+                return $relationship->target;
             }
         }
 
