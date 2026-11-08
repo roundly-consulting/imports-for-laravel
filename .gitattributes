@@ -13,3 +13,4 @@
 /testbench.yaml.dist export-ignore
 /bin                export-ignore
 /art                export-ignore
+/workbench          export-ignore
