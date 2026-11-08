@@ -168,8 +168,14 @@ final readonly class RowQuery
         $importer = $this->manager->container()->make(ImporterRegistry::class)->rows($this->session->importer);
         $mapping = SessionState::mapping($this->session)->toArray();
         $temp = TempFiles::directory();
-        $offsets = $this->session->chunk_offsets ?? [];
-        [$offset, $first] = $offsets[0] ?? [0, $this->session->header_row + 1];
+        // No stored offset = the preview found no data rows; reading the file from its top would
+        // list the header (and any preamble) as rows. A session never previewed has null offsets
+        // and SessionRows refuses it as stale.
+        if ($this->session->chunk_offsets === []) {
+            return;
+        }
+
+        [$offset, $first] = ($this->session->chunk_offsets ?? [])[0] ?? [0, 1];
 
         $fields = [];
 

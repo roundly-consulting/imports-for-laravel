@@ -49,12 +49,12 @@ final class SessionRows
      */
     public static function pick(ImportSession $session, array $numbers, string $temp, int $maxColumns): Generator
     {
-        if ($numbers === []) {
-            return;
+        if ($numbers === [] || $session->chunk_offsets === []) {
+            return;     // no stored offset: the preview found no data rows
         }
 
         $last = max(array_keys($numbers));
-        [$offset, $first] = ($session->chunk_offsets ?? [])[0] ?? [0, $session->header_row + 1];
+        [$offset, $first] = ($session->chunk_offsets ?? [])[0] ?? [0, 1];
 
         foreach (self::from($session, (int) $offset, (int) $first, $temp, $maxColumns) as $number => $cells) {
             if ($number > $last) {
