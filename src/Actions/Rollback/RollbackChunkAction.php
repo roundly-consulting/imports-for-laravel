@@ -121,7 +121,9 @@ final readonly class RollbackChunkAction
             return [RollbackOutcome::Missing, 'unknown_type'];
         }
 
-        $record = Scoped::query($class, $owner, $definition->ownership(), $this->scope, true)->whereKey($ledger->record_id)->first();
+        // Locked for the rest of the per-record transaction: an edit between this check and the
+        // delete waits, and is then seen as a change (a no-op on SQLite, real on pgsql/mysql).
+        $record = Scoped::query($class, $owner, $definition->ownership(), $this->scope, true)->whereKey($ledger->record_id)->lockForUpdate()->first();
 
         if ($record === null) {
             return [RollbackOutcome::Missing, null];
@@ -129,6 +131,11 @@ final readonly class RollbackChunkAction
 
         if (method_exists($record, 'trashed') && $record->trashed() === true) {
             return [RollbackOutcome::Missing, 'already_deleted'];
+        }
+
+        if ($definition->changeDetection()->usesChecksum() && $ledger->checksum === null) {
+            // The commit could not read the record back: nothing proves it unchanged.
+            return [RollbackOutcome::KeptChanged, 'no_checksum'];
         }
 
         if ($this->changed($definition, $record, $ledger)) {
@@ -143,7 +150,7 @@ final readonly class RollbackChunkAction
     private function changed(ImportDefinition $definition, Model $record, ImportedRecord $ledger): bool
     {
         if ($definition->changeDetection()->usesChecksum()) {
-            return $ledger->checksum !== null && Checksums::of($definition->checksumAttributes($record)) !== $ledger->checksum;
+            return Checksums::of($definition->checksumAttributes($record)) !== $ledger->checksum;
         }
 
         $column = $record->getUpdatedAtColumn();

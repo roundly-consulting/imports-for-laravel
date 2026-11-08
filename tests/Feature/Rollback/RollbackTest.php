@@ -3,11 +3,17 @@
 declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use RoundlyConsulting\Imports\Actions\Rollback\RollbackChunkAction;
+use RoundlyConsulting\Imports\Contracts\OwnerScope;
 use RoundlyConsulting\Imports\Definition\ChangeDetection;
+use RoundlyConsulting\Imports\Definition\Ownership;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
 use RoundlyConsulting\Imports\Enums\RollbackOutcome;
 use RoundlyConsulting\Imports\Enums\RollbackStatus;
@@ -16,11 +22,18 @@ use RoundlyConsulting\Imports\Events\ImportRollbackStarted;
 use RoundlyConsulting\Imports\Events\ImportRolledBack;
 use RoundlyConsulting\Imports\Exceptions\ImportStateException;
 use RoundlyConsulting\Imports\Exceptions\ImportUnauthorizedException;
+use RoundlyConsulting\Imports\Exceptions\InvalidImporterDefinitionException;
 use RoundlyConsulting\Imports\Exceptions\UndoWindowClosedException;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
 use RoundlyConsulting\Imports\Models\ImportSession;
+use RoundlyConsulting\Imports\Registry\ImporterRegistry;
+use RoundlyConsulting\Imports\Scoping\ExplicitOwnerScope;
+use RoundlyConsulting\Imports\Support\Checksums;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
+use RoundlyConsulting\Testing\Fixtures\LockRecorder;
+use RoundlyConsulting\Testing\Fixtures\LockRecordingGrammar;
+use Workbench\App\Hooks;
 use Workbench\App\Importers\AssetsImporter;
 use Workbench\App\Models\Asset;
 use Workbench\App\Models\Invitation;
@@ -142,7 +155,8 @@ test('a_hook_may_keep_a_record', function (): void {
         ->upload('people', SpreadsheetFactory::csv(['Email'], [['a@example.com']]))->preview()->commit();
     Invitation::query()->update(['status' => 'accepted']);
     // Accepted, but the checksum is refreshed as if the change happened at import.
-    ImportedRecord::query()->update(['checksum' => null]);
+    $people = app(ImporterRegistry::class)->find('people');
+    ImportedRecord::query()->update(['checksum' => Checksums::of($people->checksumAttributes(Invitation::query()->firstOrFail()))]);
 
     $batch->rollback();
 
@@ -219,4 +233,74 @@ test('a_failed_rollback_can_be_retried', function (): void {
     Asset::flushEventListeners();
 
     expect(Asset::query()->count())->toBe(0)->and($batch->rollbackReport()?->deleted)->toBe(2);
+});
+
+test('a_record_without_a_stored_checksum_is_kept', function (): void {
+    $team = team();
+    $batch = uploadAssets($team, admin($team), assetsCsv(assetRows(2)))->preview()->commit();
+    ImportedRecord::query()->where('row_number', 2)->update(['checksum' => null]);
+
+    $batch->rollback();
+
+    expect(Asset::query()->pluck('asset_tag')->all())->toBe(['AST-0001'])
+        ->and(ImportedRecord::query()->where('row_number', 2)->first()?->rollback_outcome)->toBe(RollbackOutcome::KeptChanged)
+        ->and(ImportedRecord::query()->where('row_number', 2)->value('rollback_reason'))->toBe('no_checksum');
+});
+
+test('the_undo_locks_the_record_it_checks', function (): void {
+    $team = team();
+    $batch = uploadAssets($team, admin($team), assetsCsv(assetRows(1)))->preview()->commit();
+    $connection = DB::connection();
+    $connection->setQueryGrammar(new LockRecordingGrammar($connection));
+    LockRecorder::flush();
+    LockRecorder::listenForMarkers();
+
+    $batch->rollback();
+
+    $assetLocks = array_values(array_filter(LockRecorder::recorded(), static fn (array $lock): bool => str_contains($lock['sql'], '"assets"')));
+
+    expect($assetLocks)->toHaveCount(1)
+        ->and($assetLocks[0]['marker'])->toBe('lock-for-update')
+        ->and($assetLocks[0]['transactionDepth'])->toBeGreaterThanOrEqual(1)
+        ->and(Asset::query()->count())->toBe(0);
+})->skip(fn (): bool => DB::connection()->getDriverName() !== 'sqlite', 'the lock recorder is SQLite-only; real engines lock for real');
+
+test('a_record_invisible_at_commit_is_reported', function (): void {
+    Exceptions::fake();
+    $hidden = new class implements OwnerScope
+    {
+        public bool $hide = false;
+
+        public function run(Model $owner, Closure $callback): mixed
+        {
+            return $callback();
+        }
+
+        public function constrain(Builder $query, Model $owner, Ownership $rule): Builder
+        {
+            $query = (new ExplicitOwnerScope)->constrain($query, $owner, $rule);
+
+            return $this->hide ? $query->whereRaw('1 = 0') : $query;
+        }
+
+        public function owns(Model $record, Model $owner, Ownership $rule): bool
+        {
+            return (new ExplicitOwnerScope)->owns($record, $owner, $rule);
+        }
+    };
+    app()->instance(OwnerScope::class, $hidden);
+    Hooks::$onCreate = static function () use ($hidden): void {
+        $hidden->hide = true;
+    };
+    $team = team();
+    $batch = uploadAssets($team, admin($team), assetsCsv(assetRows(1)))->preview()->commit();
+
+    Exceptions::assertReported(fn (InvalidImporterDefinitionException $e): bool => str_contains($e->getMessage(), 'row 2 created a record its ownership query cannot see'));
+    expect(ImportedRecord::query()->value('checksum'))->toBeNull();
+
+    $hidden->hide = false;
+    $batch->rollback();
+
+    expect(Asset::query()->count())->toBe(1)
+        ->and(ImportedRecord::query()->value('rollback_reason'))->toBe('no_checksum');
 });
