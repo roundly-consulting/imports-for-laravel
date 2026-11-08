@@ -104,7 +104,7 @@ final readonly class ImportRow
             }
 
             if (($column = $this->storeAs[$field] ?? null) !== null) {
-                $attributes[$column] = $this->references[$field]?->getKey();
+                $attributes[$column] = ($this->references[$field] ?? null)?->getKey();
             }
         }
 

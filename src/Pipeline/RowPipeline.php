@@ -198,7 +198,8 @@ final class RowPipeline
     private function resolveReferences(array $evaluations): void
     {
         foreach ($this->fields as $name => $field) {
-            if ($field->type !== FieldType::Reference || ! in_array($name, $this->columns, true)) {
+            // An unmapped reference is still looked up when it has a default (the default is its value).
+            if ($field->type !== FieldType::Reference || (! in_array($name, $this->columns, true) && ! $field->hasDefault)) {
                 continue;
             }
 
