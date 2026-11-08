@@ -201,7 +201,7 @@ test('doctor_reports_each_misconfiguration', function (string $check, Closure $b
     'retention' => ['retention', fn () => config()->set('imports.storage.retention', 'P1D'), 'warning'],
     'extensions' => ['extensions', fn () => null, 'ok'],
     'lock store' => ['lock_store', fn () => config()->set('cache.default', 'array'), 'warning'],
-    'owner scope' => ['owner_scope', fn () => null, 'ok'],
+    'owner scope' => ['owner_scope', fn () => null, class_exists('RoundlyConsulting\Teams\TeamsServiceProvider') ? 'warning' : 'ok'],
     'migrations' => ['migrations', fn () => config()->set('imports.tables.sessions', 'nope_sessions'), 'error'],
 ]);
 

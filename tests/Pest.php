@@ -16,6 +16,7 @@ use RoundlyConsulting\Imports\Tests\Http\HttpTestCase;
 use RoundlyConsulting\Imports\Tests\Install\InstallTestCase;
 use RoundlyConsulting\Imports\Tests\KeyTypes\KeyTypesTestCase;
 use RoundlyConsulting\Imports\Tests\Support\XlsxBuilder;
+use RoundlyConsulting\Imports\Tests\Teams\TeamsGroupTestCase;
 use RoundlyConsulting\Imports\Tests\TestCase;
 use Workbench\App\Hooks;
 use Workbench\App\Models\Team;
@@ -29,7 +30,8 @@ $fresh = function (): void {
     Hooks::reset();
 };
 
-uses(TestCase::class)->beforeEach($fresh)->in('Acceptance', 'Arch', 'Feature', 'Memory', 'RealEngine', 'Teams');
+uses(TestCase::class)->beforeEach($fresh)->in('Acceptance', 'Arch', 'Feature', 'Memory', 'RealEngine');
+uses(TeamsGroupTestCase::class)->beforeEach($fresh)->in('Teams');
 uses(HttpTestCase::class)->beforeEach($fresh)->in('Http');
 uses(KeyTypesTestCase::class)->beforeEach($fresh)->in('KeyTypes');
 uses(InstallTestCase::class)->beforeEach($fresh)->in('Install');
