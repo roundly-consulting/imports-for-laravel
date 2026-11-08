@@ -1,11 +1,19 @@
 {
-    "name": "roundly-consulting/package-template-for-laravel",
-    "description": "TODO: replace with a one-line description of the new package.",
+    "name": "roundly-consulting/imports-for-laravel",
+    "description": "Import CSV and XLSX files into Eloquent models: templates, column mapping, validated preview, duplicate handling, background batches and undo.",
     "keywords": [
         "roundly-consulting",
-        "laravel"
+        "laravel",
+        "import",
+        "csv",
+        "xlsx",
+        "excel",
+        "spreadsheet",
+        "data-import",
+        "bulk-upload",
+        "column-mapping"
     ],
-    "homepage": "https://roundly-consulting.com/open-source/docs/package-template-for-laravel",
+    "homepage": "https://roundly-consulting.com/open-source/docs/imports-for-laravel",
     "license": "MIT",
     "authors": [
         {
@@ -15,11 +23,31 @@
         }
     ],
     "support": {
-        "docs": "https://roundly-consulting.com/open-source/docs/package-template-for-laravel"
+        "docs": "https://roundly-consulting.com/open-source/docs/imports-for-laravel"
     },
     "require": {
         "php": "^8.4",
+        "ext-mbstring": "*",
+        "ext-xmlreader": "*",
+        "ext-xmlwriter": "*",
+        "ext-zip": "*",
+        "illuminate/bus": "^13.0",
+        "illuminate/cache": "^13.0",
+        "illuminate/console": "^13.0",
         "illuminate/contracts": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/events": "^13.0",
+        "illuminate/filesystem": "^13.0",
+        "illuminate/http": "^13.0",
+        "illuminate/pagination": "^13.0",
+        "illuminate/queue": "^13.0",
+        "illuminate/routing": "^13.0",
+        "illuminate/support": "^13.0",
+        "illuminate/translation": "^13.0",
+        "illuminate/validation": "^13.0",
+        "roundly-consulting/crypto-for-laravel": "^2.1",
+        "roundly-consulting/enums-for-laravel": "^2.0",
+        "roundly-consulting/options-for-laravel": "^2.0",
         "roundly-consulting/package-toolkit-for-laravel": "^2.0"
     },
     "require-dev": {
@@ -33,14 +61,21 @@
         "phpstan/extension-installer": "^1.4",
         "roundly-consulting/testing-for-laravel": "^2.0"
     },
+    "suggest": {
+        "roundly-consulting/teams-for-laravel": "Keep every import inside the current team (the TeamsOwnerScope recipe in the docs).",
+        "roundly-consulting/sentinel-for-laravel": "Seal imported records or audit imports from the package events (recipe in the docs)."
+    },
     "autoload": {
         "psr-4": {
-            "RoundlyConsulting\\PackageTemplate\\": "src"
+            "RoundlyConsulting\\Imports\\": "src",
+            "RoundlyConsulting\\Imports\\Database\\Factories\\": "database/factories"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "RoundlyConsulting\\PackageTemplate\\Tests\\": "tests"
+            "RoundlyConsulting\\Imports\\Tests\\": "tests",
+            "Workbench\\App\\": "workbench/app",
+            "Workbench\\Database\\Factories\\": "workbench/database/factories"
         }
     },
     "scripts": {
@@ -48,7 +83,7 @@
         "format": "vendor/bin/pint",
         "analyse": "vendor/bin/phpstan analyse --no-progress",
         "test": "vendor/bin/pest",
-        "test-coverage": "vendor/bin/pest --coverage --min=90"
+        "test-coverage": "vendor/bin/pest --coverage --min=95"
     },
     "config": {
         "sort-packages": true,
@@ -60,10 +95,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "RoundlyConsulting\\PackageTemplate\\PackageTemplateServiceProvider"
+                "RoundlyConsulting\\Imports\\ImportsServiceProvider"
             ],
             "aliases": {
-                "PackageTemplate": "RoundlyConsulting\\PackageTemplate\\Facades\\PackageTemplate"
+                "Imports": "RoundlyConsulting\\Imports\\Facades\\Imports"
             }
         }
     }
