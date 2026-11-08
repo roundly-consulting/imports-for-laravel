@@ -1,0 +1,451 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RoundlyConsulting\Imports\Actions\Commit;
+
+use Carbon\CarbonImmutable;
+use Closure;
+use Illuminate\Bus\Batch;
+use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Validation\Factory as ValidationFactory;
+use Illuminate\Database\Connection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Validation\ValidationException;
+use RoundlyConsulting\Imports\Contracts\OwnerScope;
+use RoundlyConsulting\Imports\DataTransferObjects\ImportSummary;
+use RoundlyConsulting\Imports\Definition\ImportDefinition;
+use RoundlyConsulting\Imports\Enums\ImportOperation;
+use RoundlyConsulting\Imports\Enums\RecordAction;
+use RoundlyConsulting\Imports\Enums\RowOutcome;
+use RoundlyConsulting\Imports\Enums\RowStatus;
+use RoundlyConsulting\Imports\Events\ImportChunkProcessed;
+use RoundlyConsulting\Imports\Exceptions\ImportRowException;
+use RoundlyConsulting\Imports\FileImporter;
+use RoundlyConsulting\Imports\Importer;
+use RoundlyConsulting\Imports\Models\ImportBatch;
+use RoundlyConsulting\Imports\Models\ImportRowResult;
+use RoundlyConsulting\Imports\Models\ImportSession;
+use RoundlyConsulting\Imports\Pipeline\InFileKeys;
+use RoundlyConsulting\Imports\Pipeline\RowPipeline;
+use RoundlyConsulting\Imports\Pipeline\Scoped;
+use RoundlyConsulting\Imports\Reading\Cell;
+use RoundlyConsulting\Imports\Registry\ImporterRegistry;
+use RoundlyConsulting\Imports\Rows\ImportContext;
+use RoundlyConsulting\Imports\Rows\ImportFile;
+use RoundlyConsulting\Imports\Support\Access;
+use RoundlyConsulting\Imports\Support\Audits;
+use RoundlyConsulting\Imports\Support\Checksums;
+use RoundlyConsulting\Imports\Support\Clock;
+use RoundlyConsulting\Imports\Support\Digests;
+use RoundlyConsulting\Imports\Support\Failures;
+use RoundlyConsulting\Imports\Support\FileDuplicateCheck;
+use RoundlyConsulting\Imports\Support\ImportModels;
+use RoundlyConsulting\Imports\Support\Keys;
+use RoundlyConsulting\Imports\Support\KeyTypes;
+use RoundlyConsulting\Imports\Support\Locales;
+use RoundlyConsulting\Imports\Support\SessionRows;
+use RoundlyConsulting\Imports\Support\SessionState;
+use RoundlyConsulting\Imports\Support\TempFiles;
+use Throwable;
+
+/**
+ * Commits one chunk in ONE transaction on the import connection: it opens by claiming the batch
+ * row (`lockForUpdate()` + `chunks_completed === index`; anything else is a duplicate delivery or
+ * a retry of a committed chunk → no work), then writes each row in its own savepoint together with
+ * its ledger row, and finally moves the chunk counter. The host write, the ledger, the row results
+ * and the counter commit or roll back together — a retry after a crash is a no-op or a clean redo.
+ *
+ * Rows the preview found invalid or duplicated are skipped; every other row is re-validated and
+ * re-matched against the current data. A row error fails the row; an infrastructure error retries
+ * the chunk.
+ *
+ * @internal
+ */
+final readonly class ProcessChunkAction
+{
+    public function __construct(
+        private ImporterRegistry $registry,
+        private OwnerScope $scope,
+        private ValidationFactory $validation,
+        private Container $container,
+    ) {}
+
+    public function execute(int|string $batchId, int $index, bool $first = false, ?Batch $laravel = null): void
+    {
+        $batch = ImportModels::batch()::query()->find($batchId);
+
+        if ($batch === null) {
+            return;
+        }
+
+        $session = $batch->session;
+        $owner = Audits::owner($session);
+        $importer = $this->registry->find($session->importer);
+
+        $this->scope->run($owner, function () use ($batch, $session, $owner, $importer, $index, $first, $laravel): void {
+            if ($first && ! Access::allows($importer, Audits::committer($batch), $owner, ImportOperation::Commit)) {
+                $laravel?->cancel();
+                $this->container->make(FailImportAction::class)->execute(Keys::of($batch), 'unauthorized');
+
+                return;
+            }
+
+            if ($importer instanceof FileImporter) {
+                [$summary, $count] = $this->commitFiles($batch, $session, $owner, $importer, $index);
+            } elseif ($importer instanceof Importer) {
+                $temp = TempFiles::directory();
+
+                try {
+                    $rows = iterator_to_array(SessionRows::chunk($session, $index, $temp, $importer->limits()->columns), true);
+                    $summary = $this->commit($batch, $session, $owner, $importer, $index, $rows);
+                    $count = count($rows);
+                } finally {
+                    TempFiles::remove($temp);
+                }
+            } else {
+                return;
+            }
+
+            if ($summary !== null) {
+                Event::dispatch(new ImportChunkProcessed(Audits::for($session, $batch->refresh(), Audits::committer($batch)), $index, $count, $summary));
+            }
+        });
+    }
+
+    /**
+     * @param  array<int, list<Cell|null>>  $rows
+     */
+    private function commit(ImportBatch $batch, ImportSession $session, Model $owner, Importer $importer, int $index, array $rows): ?ImportSummary
+    {
+        $connection = $batch->getConnection();
+        $work = function () use ($batch, $session, $owner, $importer, $index, $rows, $connection): ?ImportSummary {
+            $claimed = ImportModels::batch()::query()->whereKey($batch->getKey())->lockForUpdate()->first();
+
+            if ($claimed === null || $claimed->chunks_completed !== $index) {
+                return null;
+            }
+
+            $numbers = array_keys($rows);
+            $stored = $numbers === [] ? [] : $this->stored($session, min($numbers), max($numbers));
+            $counts = ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0, 'reclassified' => 0, 'duplicates' => 0, 'invalid' => 0];
+            $pending = [];
+
+            foreach ($rows as $number => $cells) {
+                $result = $stored[$number] ?? null;
+
+                if ($result?->status === RowStatus::Invalid) {
+                    $counts['invalid']++;
+                } elseif ($result?->status === RowStatus::DuplicateInFile) {
+                    $counts['duplicates']++;
+                } else {
+                    $pending[$number] = $cells;
+                }
+            }
+
+            $pipeline = new RowPipeline($importer, SessionState::mapping($session)->toArray(), count($session->headers), $owner, $this->scope, $session->locale, $session->timezone, $this->validation);
+            $context = new ImportContext($owner, Audits::committer($batch), $importer, Keys::of($session), Keys::of($batch), $session->mode, $session->locale, $session->timezone, $this->scope);
+            $created = [];
+
+            foreach ($pending === [] ? [] : $pipeline->evaluate($pending, new InFileKeys) as $evaluation) {
+                if ($evaluation->templateRow) {
+                    continue;
+                }
+
+                $previous = isset($stored[$evaluation->number]) ? $stored[$evaluation->number]->status : RowStatus::Valid;
+
+                if ($previous !== $evaluation->status && $previous !== RowStatus::Failed) {
+                    $counts['reclassified']++;
+                }
+
+                if (! $evaluation->isValid()) {
+                    $counts[$evaluation->status === RowStatus::DuplicateInFile ? 'duplicates' : 'failed']++;
+                    $this->failRow($session, $evaluation->number, $evaluation->errors);
+
+                    continue;
+                }
+
+                $plan = RowPipeline::outcome($evaluation->status, $session->mode);
+
+                if ($plan === RowOutcome::Skip) {
+                    $counts['skipped']++;
+
+                    continue;
+                }
+
+                $row = $evaluation->row;
+                $match = $evaluation->match;
+
+                if ($row === null) {
+                    continue;
+                }
+
+                $written = $this->write(
+                    $connection, $batch, $session, $owner, $importer, $evaluation->number,
+                    static fn (): Model => $plan === RowOutcome::Update && $match !== null ? $importer->update($match, $row, $context) : $importer->create($row, $context),
+                    $plan === RowOutcome::Update,
+                    null,
+                );
+
+                if ($written === null) {
+                    continue;
+                }
+
+                [$action, $record] = $written;
+
+                if ($action === 'failed') {
+                    $counts['failed']++;
+
+                    continue;
+                }
+
+                $counts[$action->value]++;
+
+                if ($action === RecordAction::Created && $record !== null) {
+                    $created[$record::class][] = $record->getKey();
+                }
+            }
+
+            return $this->complete($claimed, $session, $importer, $owner, $index, $counts, $created);
+        };
+
+        return $connection->transactionLevel() === 0 ? $connection->transaction($work, 3) : $connection->transaction($work);
+    }
+
+    /**
+     * A file-batch chunk: every valid entry of the range becomes one record through the file
+     * importer's callback; hashes are re-checked against the ledger first.
+     *
+     * @return array{0: ImportSummary|null, 1: int}
+     */
+    private function commitFiles(ImportBatch $batch, ImportSession $session, Model $owner, FileImporter $importer, int $index): array
+    {
+        $connection = $batch->getConnection();
+        $first = (int) (($session->chunk_offsets ?? [])[$index][1] ?? 0);
+        $results = ImportModels::rowResult()::query()->where('session_id', $session->getKey())->where('row_number', '>=', $first)->orderBy('row_number')->limit($session->chunk_size ?? 1)->get();
+
+        $work = function () use ($batch, $session, $owner, $importer, $index, $results, $connection): ?ImportSummary {
+            $claimed = ImportModels::batch()::query()->whereKey($batch->getKey())->lockForUpdate()->first();
+
+            if ($claimed === null || $claimed->chunks_completed !== $index) {
+                return null;
+            }
+
+            $context = new ImportContext($owner, Audits::committer($batch), $importer, Keys::of($session), Keys::of($batch), $session->mode, $session->locale, $session->timezone, $this->scope);
+            $hashes = array_values(array_filter($results->where('status', RowStatus::Valid)->pluck('content_hash')->all(), 'is_string'));
+            $earlier = FileDuplicateCheck::earlier($importer, $owner, $hashes, Keys::of($session));
+            $counts = ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0, 'reclassified' => 0, 'duplicates' => 0, 'invalid' => 0];
+            $created = [];
+
+            foreach ($results as $result) {
+                if ($result->status === RowStatus::Invalid || $result->status === RowStatus::Failed) {
+                    $counts['invalid']++;
+
+                    continue;
+                }
+
+                if ($result->status !== RowStatus::Valid || isset($earlier[(string) $result->content_hash])) {
+                    $counts['reclassified'] += $result->status === RowStatus::Valid ? 1 : 0;
+                    $counts['duplicates']++;
+
+                    continue;
+                }
+
+                $file = new ImportFile(
+                    $result->row_number,
+                    (string) $result->label,
+                    strtolower(pathinfo((string) $result->label, PATHINFO_EXTENSION)),
+                    (int) $result->file_size,
+                    (string) $result->content_hash,
+                    $session->file_disk,
+                    (string) $result->stored_path,
+                );
+
+                [$action, $record] = $this->write(
+                    $connection, $batch, $session, $owner, $importer, $result->row_number,
+                    static fn (): Model => $importer->create($file, $context),
+                    false,
+                    $result->content_hash,
+                ) ?? ['skipped', null];
+
+                if ($action === 'skipped') {
+                    continue;
+                }
+
+                if ($action === 'failed') {
+                    $counts['failed']++;
+
+                    continue;
+                }
+
+                $counts[$action->value]++;
+
+                if ($action === RecordAction::Created && $record !== null) {
+                    $created[$record::class][] = $record->getKey();
+                }
+            }
+
+            return $this->complete($claimed, $session, $importer, $owner, $index, $counts, $created);
+        };
+
+        $summary = $connection->transactionLevel() === 0 ? $connection->transaction($work, 3) : $connection->transaction($work);
+
+        return [$summary, $results->count()];
+    }
+
+    /**
+     * @param  array<string, int>  $counts
+     * @param  array<class-string<Model>, list<mixed>>  $created
+     */
+    private function complete(ImportBatch $claimed, ImportSession $session, ImportDefinition $importer, Model $owner, int $index, array $counts, array $created): ImportSummary
+    {
+        $this->checksums($claimed, $importer, $owner, $created);
+
+        $total = $claimed->counts;
+
+        foreach ($counts as $key => $value) {
+            $total[$key] = ($total[$key] ?? 0) + $value;
+        }
+
+        $claimed->forceFill(['counts' => $total, 'chunks_completed' => $index + 1])->save();
+        ImportModels::session()::query()->whereKey($session->getKey())->update(['last_progress_at' => Clock::format(Clock::now())]);
+
+        return ImportSummary::fromArray($total);
+    }
+
+    /**
+     * One row in its own savepoint: the host callback, the ownership/connection checks and the
+     * ledger row. Null = already ledgered (defence in depth: the claim excludes it).
+     *
+     * @param  Closure(): Model  $callback
+     * @return array{0: RecordAction|'failed', 1: Model|null}|null
+     */
+    private function write(Connection $connection, ImportBatch $batch, ImportSession $session, Model $owner, ImportDefinition $importer, int $number, Closure $callback, bool $update, ?string $contentHash): ?array
+    {
+        try {
+            return $connection->transaction(function () use ($batch, $session, $owner, $importer, $number, $callback, $update, $contentHash, $connection): ?array {
+                if (ImportModels::record()::query()->where('batch_id', $batch->getKey())->where('row_number', $number)->exists()) {
+                    return null;
+                }
+
+                $record = $callback();
+
+                if (! $record->exists) {
+                    throw ImportRowException::because(Locales::line('imports::validation.unsaved', [], $session->locale));
+                }
+
+                if ($record->getConnection()->getName() !== $connection->getName()) {
+                    throw ImportRowException::because(Locales::line('imports::validation.other_connection', [], $session->locale));
+                }
+
+                if (! $this->scope->owns($record, $owner, $importer->ownership())) {
+                    throw ImportRowException::because(Locales::line('imports::validation.outside_owner', [], $session->locale));
+                }
+
+                KeyTypes::assert($record, 'record');
+
+                $action = match (true) {
+                    $update => RecordAction::Updated,
+                    $record->wasRecentlyCreated => RecordAction::Created,
+                    default => RecordAction::Linked,
+                };
+
+                ImportModels::record()::query()->create([
+                    'batch_id' => $batch->getKey(),
+                    'session_id' => $session->getKey(),
+                    'row_number' => $number,
+                    'record_type' => $record->getMorphClass(),
+                    'record_id' => $record->getKey(),
+                    'action' => $action,
+                    'owner_digest' => Digests::owner($owner),
+                    'content_hash' => $contentHash,
+                ]);
+
+                return [$action, $record];
+            });
+        } catch (Throwable $exception) {
+            if (Failures::isInfrastructure($exception)) {
+                throw $exception;
+            }
+
+            [$code, $message] = match (true) {
+                $exception instanceof ImportRowException => ['callback_failed', $exception->getMessage()],
+                $exception instanceof ValidationException => ['callback_failed', self::firstError($exception)],
+                $exception instanceof UniqueConstraintViolationException => ['duplicate_created_meanwhile', Locales::line('imports::validation.duplicate_created_meanwhile', [], $session->locale)],
+                default => ['callback_failed', Locales::line('imports::validation.callback_failed', [], $session->locale)],
+            };
+
+            if (! $exception instanceof ImportRowException && ! $exception instanceof ValidationException && ! $exception instanceof UniqueConstraintViolationException) {
+                report($exception);
+            }
+
+            $this->failRow($session, $number, [['field' => null, 'column' => null, 'code' => $code, 'message' => $message, 'value' => null]]);
+
+            return ['failed', null];
+        }
+    }
+
+    /**
+     * @param  list<array{field: string|null, column: int|null, code: string, message: string, value: string|null}>  $errors
+     */
+    private function failRow(ImportSession $session, int $number, array $errors): void
+    {
+        ImportModels::rowResult()::query()->updateOrCreate(
+            ['session_id' => $session->getKey(), 'row_number' => $number],
+            ['status' => RowStatus::Failed, 'outcome' => null, 'errors' => $errors],
+        );
+    }
+
+    private static function firstError(ValidationException $exception): string
+    {
+        foreach (Arr::flatten($exception->errors()) as $message) {
+            if (is_string($message)) {
+                return $message;
+            }
+        }
+
+        return $exception->getMessage();
+    }
+
+    /**
+     * @return array<int, ImportRowResult>
+     */
+    private function stored(ImportSession $session, int $from, int $to): array
+    {
+        $results = [];
+
+        foreach (ImportModels::rowResult()::query()->where('session_id', $session->getKey())->whereBetween('row_number', [$from, $to])->get() as $result) {
+            $results[$result->row_number] = $result;
+        }
+
+        return $results;
+    }
+
+    /**
+     * One fresh read of the created records, so undo can tell later edits apart.
+     *
+     * @param  array<class-string<Model>, list<mixed>>  $created
+     */
+    private function checksums(ImportBatch $batch, ImportDefinition $importer, Model $owner, array $created): void
+    {
+        foreach ($created as $class => $ids) {
+            foreach (array_chunk($ids, 500) as $chunk) {
+                foreach (Scoped::query($class, $owner, $importer->ownership(), $this->scope, true)->whereKey($chunk)->get() as $record) {
+                    $updatedAt = $record->getUpdatedAtColumn() === null ? null : $record->getRawOriginal($record->getUpdatedAtColumn());
+
+                    ImportModels::record()::query()
+                        ->where('batch_id', $batch->getKey())
+                        ->where('record_type', $record->getMorphClass())
+                        ->where('record_id', $record->getKey())
+                        ->update([
+                            'checksum' => Checksums::of($importer->checksumAttributes($record)),
+                            'record_updated_at' => is_string($updatedAt) && $updatedAt !== '' ? Clock::format(new CarbonImmutable($updatedAt)) : null,
+                        ]);
+                }
+            }
+        }
+    }
+}
