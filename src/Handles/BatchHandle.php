@@ -21,6 +21,7 @@ use RoundlyConsulting\Imports\ImportsManager;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
+use RoundlyConsulting\Imports\Support\Abilities;
 use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\Actors;
 use RoundlyConsulting\Imports\Support\Audits;
@@ -165,12 +166,8 @@ final readonly class BatchHandle
     public function canRollback(): bool
     {
         $this->view();
-        $batch = $this->batch->refresh();
 
-        return in_array($batch->status, [BatchStatus::Completed, BatchStatus::Failed, BatchStatus::Cancelled], true)
-            && ($batch->rollback_status === null || $batch->rollback_status === RollbackStatus::RollbackFailed)
-            && $batch->undo_until !== null
-            && Clock::now()->lessThan($batch->undo_until);
+        return Abilities::canRollback($this->batch->refresh());
     }
 
     /**

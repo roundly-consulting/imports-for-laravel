@@ -8,9 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use RoundlyConsulting\Imports\DataTransferObjects\ImportCounts;
-use RoundlyConsulting\Imports\Enums\SessionStatus;
+use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
+use RoundlyConsulting\Imports\Support\Abilities;
 use RoundlyConsulting\Imports\Support\SessionState;
 
 /**
@@ -32,7 +33,7 @@ final class ImportSessionResource extends JsonResource
         $label = $registry->has($session->importer) ? $registry->find($session->importer)->labelIn() : $session->importer;
         $owner = $session->relationLoaded('owner') ? $session->getRelation('owner') : $session->owner()->getResults();
         $actor = $session->actor_type === null ? null : ($session->relationLoaded('actor') ? $session->getRelation('actor') : $session->actor()->getResults());
-        $batch = $session->relationLoaded('batch') ? $session->getRelation('batch') : null;
+        $batch = $session->relationLoaded('batch') ? $session->getRelation('batch') : ($session->status->isBeforeCommit() ? null : $session->batch()->first());
         $counts = ImportCounts::fromArray($session->counts);
 
         return [
@@ -58,8 +59,9 @@ final class ImportSessionResource extends JsonResource
             'batch_id' => $batch instanceof Model ? $batch->getKey() : null,
             'expires_at' => $session->expires_at?->toIso8601String(),
             'can' => [
-                'commit' => $session->status === SessionStatus::Previewed,
-                'rollback' => in_array($session->status, SessionStatus::undoable(), true),
+                // The rules the actions enforce: expiry, a failed undo that may run again, the undo window.
+                'commit' => Abilities::canCommit($session),
+                'rollback' => $batch instanceof ImportBatch && Abilities::canRollback($batch),
             ],
             'owner' => References::owner($owner instanceof Model ? $owner : null, $request),
             'actor' => References::actor($actor instanceof Model ? $actor : null, $request),

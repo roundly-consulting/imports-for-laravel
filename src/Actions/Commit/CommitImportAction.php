@@ -14,6 +14,7 @@ use RoundlyConsulting\Imports\Exceptions\ImportStateException;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
+use RoundlyConsulting\Imports\Support\Abilities;
 use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\Audits;
 use RoundlyConsulting\Imports\Support\Clock;
@@ -51,7 +52,7 @@ final readonly class CommitImportAction
             throw ImportStateException::wrongStatus($session->status->value);
         }
 
-        if ($session->expires_at !== null && $session->expires_at->isPast()) {
+        if (Abilities::expired($session)) {
             throw ImportStateException::expired();
         }
 

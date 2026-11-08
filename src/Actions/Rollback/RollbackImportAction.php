@@ -9,7 +9,6 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
-use RoundlyConsulting\Imports\Enums\BatchStatus;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
 use RoundlyConsulting\Imports\Enums\RecordAction;
 use RoundlyConsulting\Imports\Enums\RollbackStatus;
@@ -20,9 +19,9 @@ use RoundlyConsulting\Imports\Exceptions\UndoWindowClosedException;
 use RoundlyConsulting\Imports\Jobs\RollbackChunkJob;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
+use RoundlyConsulting\Imports\Support\Abilities;
 use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\Audits;
-use RoundlyConsulting\Imports\Support\Clock;
 use RoundlyConsulting\Imports\Support\ImportLock;
 use RoundlyConsulting\Imports\Support\ImportModels;
 use RoundlyConsulting\Imports\Support\ImportsConfig;
@@ -55,11 +54,11 @@ final readonly class RollbackImportAction
             return $batch;
         }
 
-        if ($batch->rollback_status === RollbackStatus::RollingBack || ! in_array($batch->status, [BatchStatus::Completed, BatchStatus::Failed, BatchStatus::Cancelled], true)) {
+        if (! Abilities::rollbackStatusAllows($batch)) {
             throw ImportStateException::wrongStatus($batch->rollback_status->value ?? $batch->status->value);
         }
 
-        if ($batch->undo_until === null || ! Clock::now()->lessThan($batch->undo_until)) {
+        if (! Abilities::undoWindowOpen($batch)) {
             throw UndoWindowClosedException::closed();
         }
 
