@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Imports\Actions\Maintenance;
 
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Imports\Actions\Commit\FailImportAction;
 use RoundlyConsulting\Imports\Actions\Rollback\FinishRollbackAction;
 use RoundlyConsulting\Imports\DataTransferObjects\SweepReport;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Events\ImportExpired;
+use RoundlyConsulting\Imports\Events\ImportPreviewFailed;
+use RoundlyConsulting\Imports\Jobs\ValidatePreviewJob;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Support\Audits;
 use RoundlyConsulting\Imports\Support\Clock;
@@ -87,9 +91,71 @@ final readonly class SweepImportsAction
             }
         }
 
+        $failedPreviews = 0;
+
+        $validating = ImportModels::session()::query()
+            ->where('status', SessionStatus::Validating->value)
+            ->where(static fn ($query) => $query->whereNull('last_progress_at')->orWhere('last_progress_at', '<', $stale))
+            ->get();
+
+        foreach ($validating as $session) {
+            $abandon = $session->last_progress_at === null || $session->last_progress_at->lessThan($abandoned);
+
+            if (($abandon || ! self::validationPending($session)) && $this->failPreview($session)) {
+                $failedPreviews++;
+            }
+        }
+
         $temp = TempFiles::sweep(ImportsConfig::tmpTtl());
 
-        return new SweepReport($expired, $failedCommits, $failedRollbacks, $temp);
+        return new SweepReport($expired, $failedCommits, $failedRollbacks, $temp, $failedPreviews);
+    }
+
+    /**
+     * Whether the session's validation job is still queued or running: its unique lock is held
+     * until it finishes, so a lock this probe can take means no job is coming.
+     */
+    private static function validationPending(ImportSession $session): bool
+    {
+        $probe = new ValidatePreviewJob(Keys::of($session), $session->preview_version);
+        $lock = new UniqueLock(Cache::store());
+
+        if (! $lock->acquire($probe)) {
+            return true;
+        }
+
+        $lock->release($probe);
+
+        return false;
+    }
+
+    /**
+     * `preview_failed` (reason `abandoned`) with the preview version bumped, so a late job is a
+     * compare-and-set no-op.
+     */
+    private function failPreview(ImportSession $session): bool
+    {
+        $now = Clock::format(Clock::now());
+        $failed = ImportModels::session()::query()
+            ->whereKey($session->getKey())
+            ->where('status', SessionStatus::Validating->value)
+            ->where('preview_version', $session->preview_version)
+            ->update([
+                'status' => SessionStatus::PreviewFailed->value,
+                'preview_version' => $session->preview_version + 1,
+                'failure' => json_encode(['reason' => 'abandoned', 'message' => null]),
+                'last_progress_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+        if ($failed === 0) {
+            return false;
+        }
+
+        $session->refresh();
+        Event::dispatch(new ImportPreviewFailed(Audits::for($session, null, Audits::actor($session)), 'abandoned'));
+
+        return true;
     }
 
     private function expire(ImportSession $session): void

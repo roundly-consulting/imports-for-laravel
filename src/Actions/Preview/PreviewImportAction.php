@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Imports\Actions\Preview;
 
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
@@ -17,6 +19,7 @@ use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\Audits;
+use RoundlyConsulting\Imports\Support\Clock;
 use RoundlyConsulting\Imports\Support\ImportsConfig;
 use RoundlyConsulting\Imports\Support\Keys;
 use RoundlyConsulting\Imports\Support\Locales;
@@ -34,6 +37,7 @@ final readonly class PreviewImportAction
         private ImporterRegistry $registry,
         private Container $container,
         private Dispatcher $bus,
+        private Repository $cache,
     ) {}
 
     public function execute(ImportSession $session, ?Model $actor, ?bool $queue = null): ImportSession
@@ -61,7 +65,8 @@ final readonly class PreviewImportAction
         }
 
         SessionState::resetPreview($session);
-        $session->forceFill(['status' => SessionStatus::Validating])->save();
+        // last_progress_at starts the clock imports:sweep reads to release a lost validation.
+        $session->forceFill(['status' => SessionStatus::Validating, 'last_progress_at' => Clock::now()])->save();
         $version = $session->preview_version;
 
         $inline = $queue === false
@@ -71,9 +76,15 @@ final readonly class PreviewImportAction
         if ($inline) {
             $this->container->make(ValidateRowsAction::class)->execute(Keys::of($session), $version);
         } else {
-            $this->bus->dispatch((new ValidatePreviewJob(Keys::of($session), $version))
+            $job = (new ValidatePreviewJob(Keys::of($session), $version))
                 ->onConnection(Queues::connection())
-                ->onQueue(Queues::queue()));
+                ->onQueue(Queues::queue());
+
+            // The bus dispatcher does not take a unique job's lock (only dispatch() helpers do).
+            // It is taken here: imports:sweep reads it to tell a queued validation from a lost one.
+            if ((new UniqueLock($this->cache))->acquire($job)) {
+                $this->bus->dispatch($job);
+            }
         }
 
         return $session->refresh();

@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
@@ -14,9 +16,11 @@ use RoundlyConsulting\Imports\Enums\BatchStatus;
 use RoundlyConsulting\Imports\Enums\RollbackStatus;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Events\ImportExpired;
+use RoundlyConsulting\Imports\Events\ImportPreviewFailed;
 use RoundlyConsulting\Imports\Events\ImportsPruned;
 use RoundlyConsulting\Imports\Exceptions\InvalidImportsConfigurationException;
 use RoundlyConsulting\Imports\Facades\Imports;
+use RoundlyConsulting\Imports\Jobs\ValidatePreviewJob;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
 use RoundlyConsulting\Imports\Models\ImportRowResult;
@@ -247,4 +251,53 @@ test('the_template_command_writes_a_file', function (): void {
 
 test('install_refuses_when_the_tables_exist', function (): void {
     expect(Artisan::call('imports:install'))->toBe(1)->and(Artisan::output())->toContain('already exists');
+});
+
+test('a_stuck_validation_is_failed_by_sweep', function (): void {
+    config()->set(['imports.queue.connection' => 'database', 'imports.preview.sync_threshold' => 1]);
+    Event::fake([ImportPreviewFailed::class]);
+    $team = team();
+    $session = uploadAssets($team, admin($team), assetsCsv(assetRows(3)))->preview();
+    // The worker died mid-job: the job is gone and its unique lock was released.
+    DB::table('jobs')->delete();
+    (new UniqueLock(Cache::store()))->release(new ValidatePreviewJob($session->id(), $session->model()->preview_version));
+
+    CarbonImmutable::setTestNow(now()->addMinutes(40));
+    $report = Imports::sweep();
+
+    expect($report->failedPreviews)->toBe(1)
+        ->and($session->status())->toBe(SessionStatus::PreviewFailed)
+        ->and($session->model()->refresh()->failure['reason'] ?? null)->toBe('abandoned');
+    Event::assertDispatched(ImportPreviewFailed::class, fn (ImportPreviewFailed $event): bool => $event->reason === 'abandoned');
+
+    expect(Artisan::call('imports:sweep'))->toBe(0)->and(Artisan::output())->toContain('failed 0 stuck preview(s)');
+});
+
+test('a_late_validation_job_after_the_sweep_writes_nothing', function (): void {
+    config()->set(['imports.queue.connection' => 'database', 'imports.preview.sync_threshold' => 1]);
+    $team = team();
+    $session = uploadAssets($team, admin($team), assetsCsv(assetRows(3)))->preview();
+
+    CarbonImmutable::setTestNow(now()->addHours(7));   // still queued, but past abandon_after
+    expect(Imports::sweep()->failedPreviews)->toBe(1);
+
+    drainQueue();
+
+    expect($session->status())->toBe(SessionStatus::PreviewFailed)->and($session->counts()->total)->toBe(0);
+});
+
+test('a_progressing_validation_is_left_alone', function (): void {
+    config()->set(['imports.queue.connection' => 'database', 'imports.preview.sync_threshold' => 1]);
+    $team = team();
+    $session = uploadAssets($team, admin($team), assetsCsv(assetRows(3)))->preview();
+
+    CarbonImmutable::setTestNow(now()->addMinutes(10));
+    expect(Imports::sweep()->failedPreviews)->toBe(0);
+
+    CarbonImmutable::setTestNow(now()->addMinutes(40));   // stale, but its job is still queued
+    expect(Imports::sweep()->failedPreviews)->toBe(0)->and($session->status())->toBe(SessionStatus::Validating);
+
+    drainQueue();
+
+    expect($session->status())->toBe(SessionStatus::Previewed);
 });

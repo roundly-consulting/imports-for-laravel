@@ -6,7 +6,7 @@ namespace RoundlyConsulting\Imports\DataTransferObjects;
 
 /**
  * What `imports:sweep` did: uncommitted sessions expired, stuck commits and rollbacks failed and
- * unlocked, orphaned temp directories removed.
+ * unlocked, lost previews failed, orphaned temp directories removed.
  */
 final readonly class SweepReport
 {
@@ -15,5 +15,6 @@ final readonly class SweepReport
         public int $failedCommits = 0,
         public int $failedRollbacks = 0,
         public int $tempDirectories = 0,
+        public int $failedPreviews = 0,
     ) {}
 }

@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use RoundlyConsulting\Imports\Actions\Preview\ValidateRowsAction;
+use RoundlyConsulting\Imports\Support\Durations;
 use RoundlyConsulting\Imports\Support\ImportsConfig;
 
 /**
@@ -32,6 +33,14 @@ final class ValidatePreviewJob implements ShouldBeUnique, ShouldQueue
         public readonly int $version,
     ) {
         $this->timeout = ImportsConfig::timeout();
+    }
+
+    /**
+     * Held until the job finishes, at most until imports:sweep would give up on it anyway.
+     */
+    public function uniqueFor(): int
+    {
+        return Durations::seconds(ImportsConfig::abandonAfter());
     }
 
     public function uniqueId(): string
