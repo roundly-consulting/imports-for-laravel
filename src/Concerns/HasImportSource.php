@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
 use RoundlyConsulting\Imports\Support\ImportModels;
+use RoundlyConsulting\Imports\Support\StillImported;
 
 /**
  * For host models an importer writes: read-only access to the import ledger, so an app can show
@@ -28,18 +29,19 @@ trait HasImportSource
     }
 
     /**
-     * The latest batch that created, linked or updated this record and was not rolled back.
+     * The latest batch that created, linked or updated this record and whose undo did not remove
+     * it (an undo that kept the record — changed since the import — leaves it imported).
      */
     public function importBatch(): ?ImportBatch
     {
-        $ledger = $this->importRecords()->whereNull('rolled_back_at')->latest('id')->first();
+        $ledger = StillImported::constrain($this->importRecords()->getQuery())->latest('id')->first();
 
         return $ledger?->batch;
     }
 
     public function wasImported(): bool
     {
-        return $this->importRecords()->whereNull('rolled_back_at')->exists();
+        return StillImported::constrain($this->importRecords()->getQuery())->exists();
     }
 
     /**
