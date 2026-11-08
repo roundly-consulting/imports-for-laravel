@@ -38,6 +38,7 @@ final readonly class ConfigureSourceAction
 
     public function execute(ImportSession $session, ?Model $actor, string|int|null $sheet = null, ?string $delimiter = null, ?int $headerRow = null): ImportSession
     {
+        $session->refresh();
         $importer = $this->registry->rows($session->importer);
         $owner = Audits::owner($session);
         Access::check($importer, $actor, $owner, ImportOperation::Upload);

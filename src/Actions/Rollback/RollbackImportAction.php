@@ -46,6 +46,7 @@ final readonly class RollbackImportAction
 
     public function execute(ImportBatch $batch, ?Model $actor): ImportBatch
     {
+        $batch->refresh();
         $session = $batch->session;
         Access::check($this->registry->find($session->importer), $actor, Audits::owner($session), ImportOperation::Rollback);
         KeyTypes::assert($actor, 'actor');

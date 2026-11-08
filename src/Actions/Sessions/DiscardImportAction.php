@@ -28,6 +28,7 @@ final readonly class DiscardImportAction
 
     public function execute(ImportSession $session, ?Model $actor): ImportSession
     {
+        $session->refresh();
         Access::check($this->registry->find($session->importer), $actor, Audits::owner($session), ImportOperation::Upload);
         SessionState::assertBeforeCommit($session);
 

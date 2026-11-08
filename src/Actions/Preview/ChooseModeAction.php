@@ -30,6 +30,7 @@ final readonly class ChooseModeAction
 
     public function execute(ImportSession $session, DuplicateMode $mode, ?Model $actor): ImportSession
     {
+        $session->refresh();
         $importer = $this->registry->rows($session->importer);
         Access::check($importer, $actor, Audits::owner($session), ImportOperation::Upload);
         SessionState::assertBeforeCommit($session);

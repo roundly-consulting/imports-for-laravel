@@ -38,6 +38,7 @@ final readonly class PreviewImportAction
 
     public function execute(ImportSession $session, ?Model $actor, ?bool $queue = null): ImportSession
     {
+        $session->refresh();
         $definition = $this->registry->find($session->importer);
         Access::check($definition, $actor, Audits::owner($session), ImportOperation::Upload);
 

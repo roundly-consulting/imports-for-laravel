@@ -39,6 +39,14 @@ final readonly class CommitImportAction
         Access::check($importer, $actor, Audits::owner($session), ImportOperation::Commit);
         KeyTypes::assert($actor, 'actor');
 
+        // The caller's preview version is the plan it approved; everything else is read fresh.
+        $version = $session->preview_version;
+        $session->refresh();
+
+        if ($session->preview_version !== $version) {
+            throw ImportStateException::stalePreview();
+        }
+
         if ($session->status !== SessionStatus::Previewed) {
             throw ImportStateException::wrongStatus($session->status->value);
         }
@@ -47,7 +55,7 @@ final readonly class CommitImportAction
             throw ImportStateException::expired();
         }
 
-        ImportLock::acquire($session, [SessionStatus::Previewed], SessionStatus::Committing, $session->preview_version);
+        ImportLock::acquire($session, [SessionStatus::Previewed], SessionStatus::Committing, $version);
 
         try {
             /** @var ImportBatch $batch */

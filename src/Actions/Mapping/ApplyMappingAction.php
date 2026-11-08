@@ -34,6 +34,7 @@ final readonly class ApplyMappingAction
      */
     public function execute(ImportSession $session, array|ColumnMapping $mapping, ?Model $actor): ImportSession
     {
+        $session->refresh();
         $importer = $this->registry->rows($session->importer);
         Access::check($importer, $actor, Audits::owner($session), ImportOperation::Upload);
         SessionState::assertBeforeCommit($session);
