@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\Imports\Actions\Commit\ProcessChunkAction;
 use RoundlyConsulting\Imports\Contracts\OwnerScope;
@@ -249,9 +248,7 @@ test('a_retried_chunk_does_not_double_create', function (): void {
 
     $batch = $session->commit();
     // A worker stops on a lost connection (its supervisor starts a new one): run it like that.
-    for ($restarts = 0; $restarts < 3; $restarts++) {
-        Artisan::call('queue:work', ['connection' => 'database', '--stop-when-empty' => true, '--sleep' => 0]);
-    }
+    drainQueue();
 
     expect($batch->status())->toBe(BatchStatus::Completed)
         ->and(Asset::query()->count())->toBe(12)

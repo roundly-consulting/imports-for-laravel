@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Artisan;
 use RoundlyConsulting\Imports\Enums\BatchStatus;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Enums\TemplateFormat;
@@ -16,11 +15,6 @@ use Workbench\Database\Factories\VendorFactory;
  * The owner brief's "Done means": the workbench app runs the full flow for both importers —
  * template, upload, mapping, preview, commit in the background on a real queue worker, undo.
  */
-function runWorker(): void
-{
-    Artisan::call('queue:work', ['connection' => 'database', '--queue' => 'imports', '--stop-when-empty' => true, '--sleep' => 0]);
-}
-
 /**
  * The template's own header row, read back with the package reader.
  *
@@ -70,7 +64,7 @@ test('the_people_importer_runs_the_full_flow', function (): void {
 
     $session->preview();
     expect($session->status())->toBe(SessionStatus::Validating);
-    runWorker();
+    drainQueue();
     expect($session->status())->toBe(SessionStatus::Previewed)
         ->and($session->counts()->valid)->toBe(3)
         ->and(Invitation::query()->count())->toBe(0);
@@ -78,7 +72,7 @@ test('the_people_importer_runs_the_full_flow', function (): void {
     $batch = $session->commit();
     expect($batch->status())->toBe(BatchStatus::Running)->and(Invitation::query()->count())->toBe(0);
 
-    runWorker();
+    drainQueue();
 
     expect($batch->status())->toBe(BatchStatus::Completed)
         ->and($batch->summary()->created)->toBe(3)
@@ -89,7 +83,7 @@ test('the_people_importer_runs_the_full_flow', function (): void {
     Invitation::query()->where('email', 'ada@example.com')->firstOrFail()->accept();
 
     $batch->rollback();
-    runWorker();
+    drainQueue();
 
     expect($batch->rollbackReport()?->handled)->toBe(2)
         ->and($batch->rollbackReport()?->keptChanged)->toBe(1)
@@ -116,12 +110,12 @@ test('the_assets_importer_runs_the_full_flow', function (): void {
     expect($session->status())->toBe(SessionStatus::Mapped);
 
     $session->preview();
-    runWorker();
+    drainQueue();
 
     expect($session->counts()->valid)->toBe(6)->and(Asset::query()->count())->toBe(0);
 
     $batch = $session->commit();
-    runWorker();
+    drainQueue();
 
     expect($batch->status())->toBe(BatchStatus::Completed)
         ->and(Asset::query()->count())->toBe(6)
@@ -132,7 +126,7 @@ test('the_assets_importer_runs_the_full_flow', function (): void {
     Asset::query()->where('asset_tag', 'AST-3')->firstOrFail()->update(['name' => 'Repaired']);
 
     $batch->rollback();
-    runWorker();
+    drainQueue();
 
     expect(Asset::query()->pluck('asset_tag')->all())->toBe(['AST-3'])
         ->and($batch->rollbackReport()?->deleted)->toBe(5)

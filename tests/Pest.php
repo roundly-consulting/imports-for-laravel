@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Handles\SessionHandle;
@@ -21,6 +23,22 @@ uses(TestCase::class)
         Hooks::reset();
     })
     ->in(__DIR__);
+
+/**
+ * Run the database queue worker like a supervisor would: a fresh worker whenever one stops
+ * (a lost connection stops a worker on purpose), until the queue is empty.
+ */
+function drainQueue(string $queue = 'default,imports'): void
+{
+    for ($run = 0; $run < 10; $run++) {
+        app()->forgetInstance('queue.worker');
+        Artisan::call('queue:work', ['connection' => 'database', '--queue' => $queue, '--stop-when-empty' => true, '--sleep' => 0, '--memory' => 4096]);
+
+        if (DB::table('jobs')->whereIn('queue', explode(',', $queue))->count() === 0) {
+            return;
+        }
+    }
+}
 
 function team(): Team
 {

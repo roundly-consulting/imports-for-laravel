@@ -7,6 +7,7 @@ namespace Workbench\App\Importers;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\Imports\Definition\ChangeDetection;
 use RoundlyConsulting\Imports\Definition\Field;
 use RoundlyConsulting\Imports\Definition\NaturalKey;
 use RoundlyConsulting\Imports\Definition\Ownership;
@@ -24,6 +25,14 @@ use Workbench\App\Models\Vendor;
  */
 final class AssetsImporter extends Importer
 {
+    /** A test switch for the undo change detection. */
+    public static ?ChangeDetection $changeDetection = null;
+
+    public function changeDetection(): ChangeDetection
+    {
+        return self::$changeDetection ?? parent::changeDetection();
+    }
+
     public function key(): string
     {
         return 'assets';

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
@@ -178,7 +177,7 @@ test('five_hundred_one_rows_validate_on_the_queue_with_progress', function (): v
 
     expect($session->status())->toBe(SessionStatus::Validating)->and($session->progress()->percent)->toBe(0);
 
-    Artisan::call('queue:work', ['connection' => 'database', '--stop-when-empty' => true, '--sleep' => 0]);
+    drainQueue();
 
     expect($session->status())->toBe(SessionStatus::Previewed)
         ->and($session->counts()->valid)->toBe(501)
