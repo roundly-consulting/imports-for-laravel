@@ -9,243 +9,85 @@
 </p>
 <!-- roundly-badges:end -->
 
-# imports-for-laravel
+# Imports for Laravel
 
-A GitHub **template repository** for scaffolding new `roundly-consulting/*-for-laravel`
-packages. It is not itself a shippable package — it's a working, green skeleton that
-already follows every workspace convention (native service provider on top of
-`package-toolkit-for-laravel`, Pest 4 + Testbench via `testing-for-laravel`, Pint,
-Larastan level 7, the three GitHub workflows, dependabot) so a new package starts from
-day one compliant instead of retrofitted later.
+CSV and XLSX imports into your Eloquent models: one importer class per record type, downloadable templates, column mapping, a validated preview, duplicate handling, background batches and undo. Nothing is saved until the user commits, and invalid rows never are.
 
-## Requirements
+## Installation
 
-- PHP ^8.4
-- Laravel 13.x
+Requires PHP 8.4 (with the `zip`, `xmlreader`, `xmlwriter` and `mbstring` extensions) and Laravel 13.
 
-## Using this template
-
-1. On GitHub, click **"Use this template" → "Create a new repository"** under
-   `roundly-consulting`, named `<domain>-for-laravel` (e.g. `credits-for-laravel`). Keep
-   it **private**.
-2. Clone it into this workspace, next to the other packages:
-
-   ```bash
-   gh repo clone roundly-consulting/<domain>-for-laravel ~/Code/Packages/<domain>-for-laravel
-   cd ~/Code/Packages/<domain>-for-laravel
-   ```
-
-3. Run the rename script with the StudlyCase domain name (no `-for-laravel` suffix), and
-   optionally a second StudlyCase name for the public API:
-
-   ```bash
-   bash bin/rename-package.sh Credits
-   bash bin/rename-package.sh Auth Authentication   # when the domain is a Laravel core name
-   ```
-
-   The **domain** names the package itself; the **API name** (defaults to the domain) names
-   everything a host application refers to by name:
-
-   | Derived from | What | `Credits` | `Auth Authentication` |
-   |---|---|---|---|
-   | domain | repo + composer name, GitHub URLs | `credits-for-laravel` | `auth-for-laravel` |
-   | domain | namespace | `RoundlyConsulting\Credits` | `RoundlyConsulting\Auth` |
-   | API name | facade + its global alias | `Facades\Credits`, `Credits` | `Facades\Authentication`, `Authentication` |
-   | API name | manager, fake, service provider | `CreditsManager`, `CreditsFake`, `CreditsServiceProvider` | `AuthenticationManager`, `AuthenticationFake`, `AuthenticationServiceProvider` |
-   | API name | example action + DTO | `ExampleCreditsAction`, `ExampleCreditsData` | `ExampleAuthenticationAction`, `ExampleAuthenticationData` |
-   | API name | config file + handle, env prefix | `config/credits.php`, `CREDITS_` | `config/authentication.php`, `AUTHENTICATION_` |
-
-   The script refuses — before touching anything — a name that would break the new package
-   on its first run, and says what to pass instead:
-
-   - an API name that is a **Laravel core facade or global alias** (`Auth`, `Cache`, `Http`,
-     `Log`, `Mail`, `Queue`, `Storage`, `Str`, `URL`, … — compared case-insensitively): the
-     package's facade and alias would shadow Laravel's;
-   - an API name whose config handle is a **config file Laravel ships** (`database`,
-     `services`, `logging`, `filesystems`, …): the package's config would be merged into the
-     framework's;
-   - a PHP reserved word as the API name (the facade class would not parse), `Package` (the
-     provider would collide with the toolkit's `PackageServiceProvider`), and a domain that
-     names the template or a Tier-0 dependency (`Imports`, `PackageToolkit`,
-     `Testing`) or still carries the `ForLaravel` suffix.
-
-   It rewrites every `Imports` / `imports` / `imports` /
-   `imports` / `IMPORTS` occurrence per the table above and renames every
-   file that carries the name in its filename (`src/CreditsServiceProvider.php`,
-   `config/credits.php`, `src/CreditsManager.php`, `src/Facades/Credits.php`,
-   `src/Testing/CreditsFake.php`, `src/Actions/ExampleCreditsAction.php`,
-   `src/DataTransferObjects/ExampleCreditsData.php`). It re-sorts the `use` imports the rename
-   moves, so the tree passes `pint --test` as-is, and it fails if the template's name survives
-   in any file's contents or name, **in any casing**.
-
-   As its last act it deletes the template's own scaffolding — `bin/rename-package.sh` and
-   `tests/Feature/RenamePackageScriptTest.php` — and stages both as deletions. Neither may
-   survive into the new package: the script's substitution patterns are the one place the
-   rewrite cannot reach, so keeping it keeps template tokens, and the self-test tests a
-   script that is no longer there. If you restore either one, delete it again before you
-   commit.
-
-4. Finish the manual steps the script prints: write a real `composer.json` description,
-   rewrite this README for the real package in the **slim format** (the
-   `laravel-package-developer` skill's *README Requirements*: title + short pitch,
-   Installation, one Usage example — nothing else; the full docs live on our website) — keep
-   the badges row at the top, the "Documentation" block and the "Support our work" section
-   before "License" — and write the 1.0.0 draft into `CHANGELOG.md`'s
-   `## Unreleased` ("Initial public release." + an `### Added` summary), then run the quality gate:
-
-   ```bash
-   composer install
-   composer format && composer test && composer analyse && composer audit
-   ```
-
-   A scaffolded package is expected to be clean of template tokens, in any casing — this
-   must print nothing:
-
-   ```bash
-   grep -rliE 'package[-_]?template' --exclude-dir=.git --exclude-dir=vendor .
-   ```
-
-5. The **Tier-0 pairing** is already in `composer.json`, from Packagist:
-   `roundly-consulting/package-toolkit-for-laravel` in `require`,
-   `roundly-consulting/testing-for-laravel` in `require-dev`, both plain carets. Add any
-   *other* roundly package the new one needs the same way — a caret on its latest release, no
-   `repositories`, no `@dev`, no `minimum-stability` (see the `laravel-package-developer`
-   skill's **Cross-package dependencies** section). The one exception is a brand-new provider
-   that is not on Packagist yet: wire it path + VCS `@dev` with the `PRIVATE_REPOS_TOKEN` secret,
-   and take that wiring out when it publishes.
-6. The package needs **no CI secret** — every dependency installs from Packagist. Manually
-   dispatch the three workflows once and confirm they're green — they run on
-   `workflow_dispatch` only, never on push (see the skill's **GitHub Workflows** section).
-7. From here, treat it like any other package: run it through the normal
-   `laravel-package-improver` → `laravel-package-implementer` → `laravel-package-publisher`
-   lifecycle (`/package-pipeline <domain>-for-laravel`) once there's real functionality to
-   plan.
-
-## What's included
-
-```
-src/
-├── Actions/ExampleImportsAction.php          # placeholder action — replace me
-├── DataTransferObjects/ExampleImportsData.php # its input DTO — replace me
-├── Facades/Imports.php        # final facade, @method static docblock, real fake()
-├── Testing/ImportsFake.php    # extends the manager, records calls, assert*()
-├── ImportsManager.php         # the facade root: thin, resolves actions via the container
-├── Commands/ Events/ Exceptions/ Jobs/ Models/ Traits/
-│   (empty — the standard topic folders, ready for real code)
-└── ImportsServiceProvider.php # extends PackageServiceProvider; binds the manager
-config/imports.php            # placeholder keys (bool, int, vocabulary), merged + published + read strictly
-database/{factories,migrations}/       # empty — populate as the package grows
-tests/
-├── TestCase.php           # extends PackageTestCase (testing-for-laravel)
-├── Pest.php
-├── ArchTest.php           # the arch presets that apply to a model-less, migration-less package
-├── ConfigContractTest.php # pins the config file against what src/ reads, and off Laravel's own handles
-├── Feature/AboutTest.php  # pins the `php artisan about` section and its strict config reads
-└── Feature/FacadeTest.php # pins the facade contract + tests facade, DI, action and fake
+```bash
+composer require roundly-consulting/imports-for-laravel
+php artisan vendor:publish --tag="imports-migrations"
+php artisan make:queue-batches-table   # Laravel's job_batches table, if you do not have it yet
+php artisan migrate
 ```
 
-Two more files exist only for the template itself and are deleted by step 3, so they never
-reach a real package: `bin/rename-package.sh` and its self-test
-`tests/Feature/RenamePackageScriptTest.php`, which runs the script against a throwaway copy
-of this tree.
-
-The only example code is the placeholder public API — one action, its DTO, the manager
-method that exposes it, the facade and the fake — so the required **Actions → Manager →
-Facade** layering (the `laravel-package-developer` skill section *Public API: Actions →
-Manager → Facade (REQUIRED)*) and its pins are in place before the first real line is
-written. Rename `example()` to the package's first real verb and grow from there; everything
-else is tooling and folder shape. Add `src/Models`, migrations, etc. as the real package needs
-them, following the skill's conventions for each (Models use `$guarded = []` + `SoftDeletes` +
-a factory; Actions take DTOs, never arrays; migrations never define `down()`; and so on).
-Enable `ArchPresets::modelsGoThroughTheFacade()` in `tests/ArchTest.php` once the package has a
-`Models`, `Concerns` or `Traits` namespace.
-
-A package with no host-facing stateful behaviour — a pure trait, a per-request static
-builder, package-author or dev-only tooling — is exempt: delete the manager, facade, fake,
-example action + DTO, `tests/Feature/FacadeTest.php` and the `aliases` entry in
-`composer.json`, and say why in one README line.
+Schedule `imports:sweep` (every five minutes) and `imports:prune` (daily) so stuck imports are released and old files deleted.
 
 ## Usage
 
-> Placeholder — rewrite this section for the real API once `example()` is replaced. Keep the
-> order: facade first, then *Without the facade*, then the fake.
+Describe one record type in an importer and list it in `config('imports.importers')`:
 
 ```php
-use RoundlyConsulting\Imports\DataTransferObjects\ExampleImportsData;
+use App\Models\Asset;
+use App\Models\Vendor;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\Imports\Definition\{Field, NaturalKey, Ownership};
+use RoundlyConsulting\Imports\Enums\{DuplicateMode, ImportOperation};
 use RoundlyConsulting\Imports\Facades\Imports;
+use RoundlyConsulting\Imports\Importer;
+use RoundlyConsulting\Imports\Rows\{ImportContext, ImportRow};
 
-Imports::example(new ExampleImportsData('Ada')); // "Hello, Ada!"
-```
-
-The facade is also aliased globally as `Imports` (declared in `composer.json` under
-`extra.laravel.aliases`, so package discovery registers it).
-
-### Without the facade
-
-The facade is sugar over `ImportsManager`, a container singleton — inject it for the
-same API. Or call the action directly; it is the behaviour both of them run.
-
-```php
-use RoundlyConsulting\Imports\Actions\ExampleImportsAction;
-use RoundlyConsulting\Imports\DataTransferObjects\ExampleImportsData;
-use RoundlyConsulting\Imports\ImportsManager;
-
-final class GreetController
+final class AssetsImporter extends Importer
 {
-    public function __construct(private ImportsManager $imports) {}
+    public function key(): string { return 'assets'; }
+    public function label(): string { return 'Assets'; }
+    public function model(): string { return Asset::class; }
+    public function ownership(): Ownership { return Ownership::column('team_id'); }
+    public function naturalKey(): NaturalKey { return NaturalKey::by('asset_tag')->then('serial_number'); }
 
-    public function __invoke(): string
+    public function fields(): array
     {
-        return $this->imports->example(new ExampleImportsData('Ada'));
+        return [
+            Field::text('asset_tag')->aliases('tag', 'inventory no'),
+            Field::text('serial_number'),
+            Field::text('name')->required()->max(120),
+            Field::date('purchased_on'),
+            Field::reference('vendor')->to(Vendor::class)->by('vat_id', 'name'),
+        ];
+    }
+
+    public function authorize(?Authenticatable $user, Model $owner, ImportOperation $operation): bool
+    {
+        return $user?->can('manage-assets', $owner) ?? false;
+    }
+
+    public function create(ImportRow $row, ImportContext $context): Model
+    {
+        return Asset::create([...$row->except('vendor'), 'vendor_id' => $row->reference('vendor')?->getKey(), ...$context->ownerAttributes()]);
+    }
+
+    public function update(Model $asset, ImportRow $row, ImportContext $context): Model
+    {
+        return tap($asset)->update($row->except('vendor'));
     }
 }
-
-app(ExampleImportsAction::class)->execute(new ExampleImportsData('Ada'));
 ```
 
-### Testing with the fake
-
-`Imports::fake()` swaps the manager for a recording fake — behind the facade and in
-the container, so injected managers are faked too. Nothing runs; every call is recorded.
+Then upload, preview, commit — and undo if needed:
 
 ```php
-$fake = Imports::fake();
+$import = Imports::for($team)->by($user)
+    ->upload('assets', $request->file('file'))   // CSV or XLSX; columns map from the headers
+    ->mode(DuplicateMode::Update)
+    ->preview();                                 // every row checked, nothing saved yet
 
-// ... code under test ...
-
-$fake->assertExampleCalled();
-$fake->assertExampleCalled(fn (ExampleImportsData $data): bool => $data->name === 'Ada');
-
-// or, when the code under test must not call it at all:
-$fake->assertNothingCalled();
-```
-
-## Configuration
-
-> Placeholder — keep one row per shipped key as the real configuration replaces these.
-> Every key is read strictly through the toolkit's `Config` readers: a key that is not set
-> takes its default, and an invalid value throws `InvalidConfigurationException` naming the
-> key — nothing falls back silently. **Blank means not set:** an absent key, `null` and a
-> blank value (a host's `IMPORTS_TIMEOUT=`, empty or whitespace only) all take the
-> default. Pass env values through raw (`env('X', 30)`, never `(int) env('X', 30)`), so the
-> reader sees the typo.
-
-Publish the config file with:
-
-```bash
-php artisan vendor:publish --tag=imports-config
-```
-
-| Key | Env | Default | Meaning |
-|---|---|---|---|
-| `enabled` | `IMPORTS_ENABLED` | `true` | Placeholder flag, reported by `php artisan about`. Read with the toolkit's `Config::boolean()`, so `true`/`false`, `1`/`0`, `on`/`off` and `yes`/`no` all mean what they say, a blank value takes the default, and anything else throws `InvalidConfigurationException` naming the key. |
-| `timeout` | `IMPORTS_TIMEOUT` | `30` | Placeholder integer (seconds, 1–300), reported by `php artisan about`. Read with `Config::integer()`: an int or an integer string (`'45'`) passes, a blank value takes the default; `'five'`, `'5.5'`, `'30s'`, `0` or `301` throws. |
-| `mode` | `IMPORTS_MODE` | `sync` | Placeholder vocabulary (`sync` or `queue`), reported by `php artisan about`. Read with `Config::oneOf()` (use `Config::enum()` once the package has an enum for it): a blank value takes the default; a typo such as `queued` throws, listing the allowed values. |
-
-## Testing
-
-```bash
-composer test
+$import->counts();                               // valid 47 · invalid 2 · duplicates 1
+$batch = $import->commit();                      // a background job batch
+$batch->rollback();                              // later: removes the rows it created, unless edited since
 ```
 
 <!-- roundly-docs:start -->
