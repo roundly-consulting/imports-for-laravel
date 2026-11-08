@@ -74,16 +74,16 @@ final class Numbers
             $grouping = preg_match('/^[+-]?\d{1,3}(['.preg_quote($separator, '/').']\d{3})+$/', $value) === 1;
 
             // Repeated, or grouping thousands in a locale where it is not the decimal mark: thousands.
+            if (substr_count($value, $separator) > 1 && ! $grouping) {
+                return null;
+            }
+
             $decimal = match (true) {
-                substr_count($value, $separator) > 1 => $grouping ? $other : '',
+                substr_count($value, $separator) > 1 => $other,
                 $separator === $decimal => $separator,
                 $grouping => $other,
                 default => $separator,
             };
-
-            if ($decimal === '') {
-                return null;
-            }
         }
 
         $thousands = $decimal === '.' ? ',' : '.';
@@ -142,6 +142,9 @@ final class Numbers
         return $negative && trim($result, '0.') !== '' ? '-'.$result : $result;
     }
 
+    /**
+     * @return '.'|','
+     */
     public static function decimalSeparator(string $locale): string
     {
         return in_array(strtolower(substr($locale, 0, 2)), ['en', 'ja', 'zh', 'ko', 'he', 'th'], true) ? '.' : ',';

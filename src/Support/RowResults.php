@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Imports\Support;
 
-use RoundlyConsulting\Imports\Models\ImportRowResult;
-
 /**
  * Bulk writes of row results (the preview can list thousands of exceptions).
  *
@@ -56,19 +54,5 @@ final class RowResults
         }
 
         return array_map(static fn (array $row): array => array_merge($keys, $row), $rows);
-    }
-
-    /**
-     * @return array<int, ImportRowResult> row number => result
-     */
-    public static function forRows(int|string $sessionId, int $from, int $to): array
-    {
-        $results = [];
-
-        foreach (ImportModels::rowResult()::query()->where('session_id', $sessionId)->whereBetween('row_number', [$from, $to])->get() as $result) {
-            $results[$result->row_number] = $result;
-        }
-
-        return $results;
     }
 }

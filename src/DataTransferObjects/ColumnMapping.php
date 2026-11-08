@@ -43,23 +43,4 @@ final readonly class ColumnMapping
 
         return $map;
     }
-
-    public function columnOf(string $field): ?int
-    {
-        foreach ($this->columns as $column) {
-            if ($column->field === $field) {
-                return $column->index;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @return list<string>
-     */
-    public function fields(): array
-    {
-        return array_map(static fn (MappedColumn $column): string => $column->field, $this->columns);
-    }
 }

@@ -58,24 +58,4 @@ final readonly class ReadOptions
             allowMacroEnabled: ImportsConfig::allowMacroEnabled(),
         );
     }
-
-    public function with(string|int|null $sheet = null, ?string $delimiter = null, ?int $headerRow = null, bool $keepSheet = true, bool $keepDelimiter = true): self
-    {
-        return new self(
-            $this->limits,
-            $sheet ?? ($keepSheet ? $this->sheet : null),
-            $delimiter ?? ($keepDelimiter ? $this->delimiter : null),
-            max(1, $headerRow ?? $this->headerRow),
-            $this->timezone,
-            $this->delimiters,
-            $this->sniffBytes,
-            $this->unescapeFormulaPrefix,
-            $this->maxEntries,
-            $this->maxPartSize,
-            $this->maxInflated,
-            $this->maxBlankRows,
-            $this->sharedStringsMemory,
-            $this->allowMacroEnabled,
-        );
-    }
 }
