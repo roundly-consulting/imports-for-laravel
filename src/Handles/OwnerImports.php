@@ -23,6 +23,7 @@ use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\Access;
 use RoundlyConsulting\Imports\Support\Actors;
 use RoundlyConsulting\Imports\Support\ImportModels;
+use RoundlyConsulting\Imports\Support\Keys;
 
 /**
  * Everything one owner (a team, a company, a user) imports. Scoping is a security boundary: a
@@ -105,7 +106,7 @@ final readonly class OwnerImports
 
     public function session(int|string $id): SessionHandle
     {
-        $session = $this->scope()->whereKey($id)->first() ?? throw ImportNotFoundException::session();
+        $session = (Keys::accepts($id) ? $this->scope()->whereKey($id)->first() : null) ?? throw ImportNotFoundException::session();
         $session->setRelation('owner', $this->owner);
 
         return new SessionHandle($this->manager, $session, $this->actor);
@@ -113,7 +114,7 @@ final readonly class OwnerImports
 
     public function batch(int|string $id): BatchHandle
     {
-        $batch = ImportModels::batch()::query()->whereKey($id)->whereIn('session_id', $this->scope()->withTrashed()->select('id'))->first()
+        $batch = (Keys::accepts($id) ? ImportModels::batch()::query()->whereKey($id)->whereIn('session_id', $this->scope()->withTrashed()->select('id'))->first() : null)
             ?? throw ImportNotFoundException::batch();
 
         return new BatchHandle($this->manager, $batch, $this->actor);

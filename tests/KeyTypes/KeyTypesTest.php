@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Str;
+use RoundlyConsulting\Imports\Exceptions\ImportNotFoundException;
 use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
 use RoundlyConsulting\Imports\Models\ImportSession;
@@ -32,4 +33,15 @@ test('ulid_and_uuid_owners_and_records_work', function (): void {
 
     $batch->rollback();
     expect(UuidItem::query()->count())->toBe(0);
+});
+
+it('O-8: ulid package keys look up sessions and batches, and a malformed id is not found', function (): void {
+    $team = UlidTeam::query()->create(['name' => 'Ulid team']);
+    $session = Imports::for($team)->upload('items', SpreadsheetFactory::csv(['code', 'name'], [['A', 'One']]))->preview();
+    $batch = $session->commit();
+
+    expect(Imports::for($team)->session((string) $session->id())->id())->toBe($session->id())
+        ->and(Imports::for($team)->batch((string) $batch->id())->id())->toBe($batch->id())
+        ->and(fn () => Imports::for($team)->session('123'))->toThrow(ImportNotFoundException::class)
+        ->and(fn () => Imports::batch('not-a-ulid'))->toThrow(ImportNotFoundException::class);
 });

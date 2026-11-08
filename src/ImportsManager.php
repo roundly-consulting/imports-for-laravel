@@ -31,6 +31,7 @@ use RoundlyConsulting\Imports\Reading\SpreadsheetFile;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\ImportModels;
 use RoundlyConsulting\Imports\Support\ImportsConfig;
+use RoundlyConsulting\Imports\Support\Keys;
 use RoundlyConsulting\Imports\Support\TempFiles;
 use RoundlyConsulting\Imports\Templates\Template;
 
@@ -100,7 +101,7 @@ class ImportsManager
      */
     public function session(ImportSession|int|string $session): SessionHandle
     {
-        $model = $session instanceof ImportSession ? $session : (ImportModels::session()::query()->find($session) ?? throw ImportNotFoundException::session());
+        $model = $session instanceof ImportSession ? $session : ((Keys::accepts($session) ? ImportModels::session()::query()->find($session) : null) ?? throw ImportNotFoundException::session());
 
         return new SessionHandle($this, $model);
     }
@@ -110,7 +111,7 @@ class ImportsManager
      */
     public function batch(ImportBatch|int|string $batch): BatchHandle
     {
-        $model = $batch instanceof ImportBatch ? $batch : (ImportModels::batch()::query()->find($batch) ?? throw ImportNotFoundException::batch());
+        $model = $batch instanceof ImportBatch ? $batch : ((Keys::accepts($batch) ? ImportModels::batch()::query()->find($batch) : null) ?? throw ImportNotFoundException::batch());
 
         return new BatchHandle($this, $model);
     }

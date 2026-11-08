@@ -20,3 +20,10 @@ it('O-3: the mapping endpoint maps a numeric header by text and takes explicit c
     $this->putJson("/api/imports/sessions/{$id}/mapping", ['columns' => [['column' => 'x', 'field' => 'name']]])->assertUnprocessable()->assertJsonValidationErrors(['columns.0.column']);
     $this->putJson("/api/imports/sessions/{$id}/mapping", [])->assertUnprocessable()->assertJsonValidationErrors(['mapping']);
 });
+
+it('O-8: a malformed id in a route is a 404', function (): void {
+    $this->actingAs(admin(team()));
+
+    $this->getJson('/api/imports/sessions/abc')->assertNotFound();
+    $this->getJson('/api/imports/batches/abc')->assertNotFound();
+});
