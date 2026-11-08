@@ -28,6 +28,9 @@ final class Package
 
     private bool $closed = false;
 
+    /** The host's libxml error mode before the first part was opened; restored on close. */
+    private ?bool $libxmlErrors = null;
+
     private function __construct(private readonly ZipArchive $zip, int $maxPartSize, int $maxInflated)
     {
         $this->budget = new ByteBudget($maxPartSize, $maxInflated);
@@ -73,7 +76,8 @@ final class Package
         }
 
         GuardedStream::attach($stream, $this->budget, $stat['comp_size']);
-        libxml_use_internal_errors(true);
+        $previous = libxml_use_internal_errors(true);
+        $this->libxmlErrors ??= $previous;
         $reader = XMLReader::fromStream($stream, null, LIBXML_NONET | LIBXML_COMPACT);
 
         return $reader;
@@ -119,6 +123,13 @@ final class Package
         if (! $this->closed) {
             $this->closed = true;
             $this->zip->close();
+        }
+
+        // Leave libxml as the host had it (queue workers and Octane share the process).
+        if ($this->libxmlErrors !== null) {
+            libxml_clear_errors();
+            libxml_use_internal_errors($this->libxmlErrors);
+            $this->libxmlErrors = null;
         }
     }
 }

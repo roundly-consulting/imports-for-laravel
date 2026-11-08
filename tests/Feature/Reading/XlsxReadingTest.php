@@ -372,3 +372,21 @@ test('a_blank_header_cell_displays_its_column_letter', function (): void {
 
     expect($file->displayHeaders())->toBe(['Name', 'Column B', 'Tag']);
 });
+
+test('reading_an_xlsx_leaves_libxml_error_handling_as_it_was', function (bool $before): void {
+    $previous = libxml_use_internal_errors($before);
+    $path = XlsxBuilder::make(['S' => XlsxBuilder::row(1, ['Name']).XlsxBuilder::row(2, ['Laptop'])]);
+
+    $file = Imports::read($path);
+    $file->headers();
+    iterator_to_array($file->rows());
+    $file->close();
+    $after = libxml_use_internal_errors($before);
+
+    // A rejected file too.
+    rejectionOf(fn () => Imports::read(xlsxWithDoctypeIn('xl/workbook.xml'))->headers());
+    gc_collect_cycles();
+    $afterRejection = libxml_use_internal_errors($previous);
+
+    expect($after)->toBe($before)->and($afterRejection)->toBe($before);
+})->with([false, true]);
