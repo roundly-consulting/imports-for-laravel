@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
 use RoundlyConsulting\Imports\Enums\DelimiterSource;
 use RoundlyConsulting\Imports\Enums\RejectionReason;
 use RoundlyConsulting\Imports\Facades\Imports;
@@ -118,4 +119,17 @@ test('a_neutralised_cell_reimports_without_the_apostrophe', function (): void {
 
     config()->set('imports.csv.unescape_formula_prefix', false);
     expect(displayRows(Imports::read($path))[2][1])->toBe("'=SUM(A1)");
+});
+
+test('extra_non_empty_values_are_a_row_error', function (): void {
+    $team = team();
+    $file = SpreadsheetFactory::csv([], [['Asset tag', 'Name'], ['A-1', 'Laptop', 'stray'], ['A-2', 'Desk', '']]);
+
+    $session = uploadAssets($team, admin($team), $file)->preview();
+    $error = $session->rows(RowFilter::invalid())->paginate()->items()[0];
+
+    expect($session->counts()->invalid)->toBe(1)->and($session->counts()->valid)->toBe(1)
+        ->and($error->rowNumber)->toBe(2)
+        ->and($error->errors[0]->code)->toBe('extra_values')
+        ->and($error->errors[0]->columnLetter)->toBe('C');
 });
