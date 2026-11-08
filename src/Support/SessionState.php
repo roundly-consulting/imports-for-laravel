@@ -15,8 +15,8 @@ use RoundlyConsulting\Imports\Xlsx\CellReference;
 
 /**
  * Session transitions shared by the source, mapping and mode actions: any change before commit
- * drops the preview (row results, counts, offsets, working copy) and bumps `preview_version`, so a
- * queued validation of the old state stops without writing.
+ * bumps `preview_version` and then drops the preview (row results, counts, offsets, working copy),
+ * so a queued validation of the old state stops without writing.
  *
  * @internal
  */
@@ -29,25 +29,37 @@ final class SessionState
         }
     }
 
+    /**
+     * The version moves first, then the old row results go — both under the session row lock a
+     * validation run takes before each write. A run of the old version that tries to write after
+     * this point fails its version check, so nothing of it is left on the reset session (row
+     * results deleted before the bump could be re-filled by a stale window in between).
+     */
     public static function resetPreview(ImportSession $session): void
     {
-        ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
+        $workingCopy = $session->working_copy_path;
 
-        if ($session->working_copy_path !== null) {
-            Storage::disk($session->file_disk)->delete($session->working_copy_path);
+        $session->getConnection()->transaction(static function () use ($session): void {
+            $current = ImportModels::session()::query()->whereKey($session->getKey())->lockForUpdate()->value('preview_version');
+
+            $session->forceFill([
+                'counts' => [],
+                'chunk_size' => null,
+                'chunk_offsets' => null,
+                'working_copy_path' => null,
+                'processed_rows' => 0,
+                'progress' => 0,
+                'previewed_at' => null,
+                'failure' => null,
+                'preview_version' => max($session->preview_version, is_numeric($current) ? (int) $current : 0) + 1,
+            ])->save();
+
+            ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
+        });
+
+        if ($workingCopy !== null) {
+            Storage::disk($session->file_disk)->delete($workingCopy);
         }
-
-        $session->forceFill([
-            'counts' => [],
-            'chunk_size' => null,
-            'chunk_offsets' => null,
-            'working_copy_path' => null,
-            'processed_rows' => 0,
-            'progress' => 0,
-            'previewed_at' => null,
-            'failure' => null,
-            'preview_version' => $session->preview_version + 1,
-        ]);
     }
 
     /**

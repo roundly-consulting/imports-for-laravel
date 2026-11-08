@@ -2,12 +2,17 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
+use RoundlyConsulting\Imports\Actions\Preview\ValidateRowsAction;
 use RoundlyConsulting\Imports\Enums\RowStatus;
 use RoundlyConsulting\Imports\Enums\SessionStatus;
 use RoundlyConsulting\Imports\Events\ImportPreviewProgressed;
 use RoundlyConsulting\Imports\Facades\Imports;
+use RoundlyConsulting\Imports\Jobs\ValidatePreviewJob;
 use RoundlyConsulting\Imports\Models\ImportRowResult;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
 use Workbench\App\Models\Asset;
@@ -72,4 +77,30 @@ it('O-2: a superseded xlsx run never deletes the newer preview\'s working copy',
         ->and(Storage::disk('imports')->files(dirname((string) $session->working_copy_path)))->toHaveCount(2);   // source + this version's copy
 
     expect($import->commit()->summary()->created)->toBe(300);
+});
+
+it('O-2: a stale run cannot write between a reset and the next preview', function (): void {
+    config()->set('imports.preview.sync_threshold', 1);
+    Bus::fake([ValidatePreviewJob::class]);
+    $team = team();
+    $rows = assetRows(3);
+    $rows[1][5] = 'not-a-price';   // a stored (invalid) row result, if the stale run gets to write
+    $session = uploadAssets($team, admin($team), assetsCsv($rows))->preview();
+    $stale = $session->model()->preview_version;
+    $fired = false;
+
+    // The remap's delete of the old row results is the moment a still-running run of the old
+    // version could slip its window in: run it right there, deterministically.
+    DB::listen(static function (QueryExecuted $query) use (&$fired, $session, $stale): void {
+        if (! $fired && str_contains($query->sql, 'import_row_results') && str_starts_with(strtolower(ltrim($query->sql)), 'delete')) {
+            $fired = true;
+            app(ValidateRowsAction::class)->execute($session->id(), $stale);
+        }
+    });
+
+    $session->map([0 => 'asset_tag', 1 => 'serial_number', 2 => 'name', 5 => 'price']);
+
+    expect($fired)->toBeTrue()
+        ->and($session->status())->toBe(SessionStatus::Mapped)
+        ->and(ImportRowResult::query()->where('session_id', $session->id())->count())->toBe(0);
 });
