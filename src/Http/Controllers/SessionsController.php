@@ -7,6 +7,7 @@ namespace RoundlyConsulting\Imports\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use RoundlyConsulting\Imports\DataTransferObjects\ColumnMapping;
 use RoundlyConsulting\Imports\DataTransferObjects\MappingSuggestion;
 use RoundlyConsulting\Imports\DataTransferObjects\SuggestedColumn;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
@@ -126,10 +127,27 @@ final class SessionsController extends Controller
 
     public function map(MapRequest $request, string $session): JsonResponse
     {
+        $columns = $request->validated('columns');
+
+        if (is_array($columns)) {
+            $byIndex = [];
+
+            foreach ($columns as $pair) {
+                $column = is_array($pair) ? ($pair['column'] ?? null) : null;
+                $field = is_array($pair) ? ($pair['field'] ?? null) : null;
+
+                if (is_numeric($column) && is_string($field) && $field !== '') {
+                    $byIndex[(int) $column] = $field;
+                }
+            }
+
+            return self::session($this->scoped($request)->session($session)->map(ColumnMapping::fromArray($byIndex)));
+        }
+
         $mapping = [];
 
         foreach ((array) $request->validated('mapping') as $column => $field) {
-            $mapping[is_numeric($column) ? (int) $column : (string) $column] = is_string($field) ? $field : null;
+            $mapping[$column] = is_string($field) ? $field : null;
         }
 
         return self::session($this->scoped($request)->session($session)->map($mapping));

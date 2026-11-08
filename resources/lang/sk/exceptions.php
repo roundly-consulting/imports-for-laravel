@@ -25,6 +25,7 @@ return [
     'invalid_mapping' => 'Mapovanie stĺpcov nie je platné.',
     'mapping' => [
         'ambiguous' => 'Viac stĺpcov sa volá „:column“; namapujte ho podľa čísla stĺpca.',
+        'header_or_index' => '„:column“ je hlavička stĺpca aj číslo iného stĺpca; namapujte ho výslovne podľa čísla stĺpca.',
         'unknown_column' => 'Stĺpec „:column“ neexistuje.',
         'unknown_field' => 'Pole „:field“ neexistuje.',
         'mapped_twice' => 'Pole „:field“ je namapované na viac stĺpcov.',

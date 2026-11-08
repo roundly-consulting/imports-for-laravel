@@ -25,6 +25,7 @@ return [
     'invalid_mapping' => 'The column mapping is not valid.',
     'mapping' => [
         'ambiguous' => 'More than one column is named ":column"; map it by column number.',
+        'header_or_index' => '":column" is a column header and the number of another column; map it explicitly by column number.',
         'unknown_column' => 'There is no column ":column".',
         'unknown_field' => 'There is no field ":field".',
         'mapped_twice' => 'The field ":field" is mapped to more than one column.',

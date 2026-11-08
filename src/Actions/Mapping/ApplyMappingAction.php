@@ -21,9 +21,12 @@ use RoundlyConsulting\Imports\Support\Locales;
 use RoundlyConsulting\Imports\Support\SessionState;
 
 /**
- * Map columns to fields — by header text (`['Inventárne č.' => 'asset_tag']`) or column index
- * (`[3 => 'name']`; required for a duplicated header). An unknown field or column, a field mapped
- * twice or a required field left unmapped is refused with keyed errors. Any preview is dropped.
+ * Map columns to fields — by header text (`['Inventárne č.' => 'asset_tag']`) or 0-based column
+ * index (`[3 => 'name']`; required for a duplicated header). PHP turns a numeric key into an int,
+ * so an int key that a header reads as (`'2024'`) maps that header; one that is a header *and* the
+ * index of another column is refused rather than guessed. A `ColumnMapping` is always by index.
+ * An unknown field or column, a field mapped twice or a required field left unmapped is refused
+ * with keyed errors. Any preview is dropped.
  */
 final readonly class ApplyMappingAction
 {
@@ -61,6 +64,7 @@ final readonly class ApplyMappingAction
     {
         $headers = $session->headers;
         $display = SessionState::displayHeaders($session);
+        $byIndex = $mapping instanceof ColumnMapping;
         $input = $mapping instanceof ColumnMapping ? $mapping->toArray() : $mapping;
         $errors = [];
         $resolved = [];
@@ -71,23 +75,25 @@ final readonly class ApplyMappingAction
                 continue;
             }
 
-            if (is_int($column)) {
-                $index = $column;
-            } else {
-                $matches = array_keys(array_filter(
-                    $headers,
-                    static fn (?string $header, int $i): bool => $header === $column || $display[$i] === $column,
-                    ARRAY_FILTER_USE_BOTH,
-                ));
+            $matches = $byIndex ? [] : array_keys(array_filter(
+                $headers,
+                static fn (?string $header, int $i): bool => $header === (string) $column || $display[$i] === (string) $column,
+                ARRAY_FILTER_USE_BOTH,
+            ));
 
-                if (count($matches) > 1) {
-                    $errors['columns.'.$column][] = $line('ambiguous', 'column', $column);
+            if (count($matches) > 1) {
+                $errors['columns.'.$column][] = $line('ambiguous', 'column', (string) $column);
 
-                    continue;
-                }
-
-                $index = $matches[0] ?? null;
+                continue;
             }
+
+            if (is_int($column) && $matches !== [] && $matches[0] !== $column && $column >= 0 && $column < count($headers)) {
+                $errors['columns.'.$column][] = $line('header_or_index', 'column', (string) $column);
+
+                continue;
+            }
+
+            $index = $matches[0] ?? (is_int($column) ? $column : null);
 
             if ($index === null || $index < 0 || $index >= count($headers)) {
                 $errors['columns.'.$column][] = $line('unknown_column', 'column', (string) $column);
