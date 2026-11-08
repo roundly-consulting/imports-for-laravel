@@ -281,3 +281,15 @@ it('C-9: imports:sweep leaves a progressing undo with one failed chunk alone', f
     expect(Asset::query()->count())->toBe(1)
         ->and($batch->model()->refresh()->rollback_status)->toBe(RollbackStatus::RollbackFailed);
 });
+
+it('C-12: ImportSession::count() and ImportBatch::count() count rows; countOf() reads a count', function (): void {
+    $team = team();
+    $batch = uploadAssets($team, admin($team), assetsCsv(assetRows(2)))->preview()->commit();
+    $session = ImportSession::query()->findOrFail($batch->model()->session_id);
+
+    expect(ImportSession::count())->toBe(1)
+        ->and(ImportBatch::count())->toBe(1)
+        ->and($session->countOf('valid'))->toBe(2)
+        ->and($session->countOf('nope'))->toBe(0)
+        ->and($batch->model()->countOf('created'))->toBe(2);
+});

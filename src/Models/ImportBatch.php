@@ -104,7 +104,11 @@ class ImportBatch extends Model
         return app(ImportsManager::class)->batch($this);
     }
 
-    public function count(string $key): int
+    /**
+     * One stored count (`created`, `failed`, …), 0 when absent. Not `count()`: that stays Eloquent's
+     * row count (`ImportSession::count()`).
+     */
+    public function countOf(string $key): int
     {
         return $this->counts[$key] ?? 0;
     }

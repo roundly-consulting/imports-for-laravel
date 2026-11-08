@@ -69,7 +69,7 @@ final readonly class RowQuery
                 }
             }
 
-            return new LengthAwarePaginator($items, $this->session->count('creates'), $perPage, $page);
+            return new LengthAwarePaginator($items, $this->session->countOf('creates'), $perPage, $page);
         }
 
         if ($this->filter->field !== null) {
@@ -111,7 +111,7 @@ final readonly class RowQuery
     public function count(): int
     {
         return match (true) {
-            $this->filter->listsCreates() && $this->session->kind === ImportKind::Rows => $this->session->count('creates'),
+            $this->filter->listsCreates() && $this->session->kind === ImportKind::Rows => $this->session->countOf('creates'),
             $this->filter->field !== null => count(iterator_to_array($this->cursor(), false)),
             default => $this->query()->count(),
         };

@@ -65,7 +65,7 @@ it('reaches sessions and batches through the trusted path and model conveniences
         ->and($handle->batch()?->id())->toBe($batch->id())
         ->and($batch->session()->id())->toBe($model->id)
         ->and($model->rowResults()->count())->toBe(0)
-        ->and($model->count('valid'))->toBe(1)
+        ->and($model->countOf('valid'))->toBe(1)
         ->and(ImportBatch::query()->firstOrFail()->records()->count())->toBe(1);
 });
 

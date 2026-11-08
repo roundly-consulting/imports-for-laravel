@@ -137,7 +137,11 @@ class ImportSession extends Model
         return app(ImportsManager::class)->session($this);
     }
 
-    public function count(string $key): int
+    /**
+     * One stored count (`valid`, `creates`, …), 0 when absent. Not `count()`: that stays Eloquent's
+     * row count (`ImportSession::count()`).
+     */
+    public function countOf(string $key): int
     {
         $value = $this->counts[$key] ?? 0;
 
