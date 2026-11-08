@@ -21,6 +21,7 @@ use RoundlyConsulting\Imports\ImportsManager;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\Access;
+use RoundlyConsulting\Imports\Support\Actors;
 use RoundlyConsulting\Imports\Support\ImportModels;
 
 /**
@@ -40,7 +41,7 @@ final readonly class OwnerImports
      */
     public function by(Authenticatable|Model|null $actor): self
     {
-        return new self($this->manager, $this->owner, $actor instanceof Model ? $actor : null);
+        return new self($this->manager, $this->owner, Actors::of($actor));
     }
 
     public function upload(

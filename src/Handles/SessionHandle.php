@@ -34,6 +34,7 @@ use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportSession;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\Access;
+use RoundlyConsulting\Imports\Support\Actors;
 use RoundlyConsulting\Imports\Support\Audits;
 use RoundlyConsulting\Imports\Support\Keys;
 use RoundlyConsulting\Imports\Support\SessionState;
@@ -66,7 +67,7 @@ final readonly class SessionHandle
      */
     public function by(Authenticatable|Model|null $actor): self
     {
-        return new self($this->manager, $this->session, $actor instanceof Model ? $actor : null);
+        return new self($this->manager, $this->session, Actors::of($actor));
     }
 
     public function model(): ImportSession
@@ -84,6 +85,34 @@ final readonly class SessionHandle
         $this->authorize(ImportOperation::View);
 
         return $this->session->refresh()->status;
+    }
+
+    /**
+     * Still validating on the queue (a file over `preview.sync_threshold` rows): poll until
+     * `isPreviewed()`.
+     */
+    public function isValidating(): bool
+    {
+        return $this->status() === SessionStatus::Validating;
+    }
+
+    /**
+     * Every row checked: counts and rows are final, and the session can be committed.
+     */
+    public function isPreviewed(): bool
+    {
+        return $this->status() === SessionStatus::Previewed;
+    }
+
+    /**
+     * Committing or past it (completed, failed, cancelled, undone).
+     */
+    public function isCommitted(): bool
+    {
+        return in_array($this->status(), [
+            SessionStatus::Committing, SessionStatus::Completed, SessionStatus::Failed, SessionStatus::Cancelled,
+            SessionStatus::RollingBack, SessionStatus::RolledBack, SessionStatus::RollbackFailed,
+        ], true);
     }
 
     /**

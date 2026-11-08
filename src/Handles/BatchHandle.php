@@ -22,6 +22,7 @@ use RoundlyConsulting\Imports\Models\ImportBatch;
 use RoundlyConsulting\Imports\Models\ImportedRecord;
 use RoundlyConsulting\Imports\Registry\ImporterRegistry;
 use RoundlyConsulting\Imports\Support\Access;
+use RoundlyConsulting\Imports\Support\Actors;
 use RoundlyConsulting\Imports\Support\Audits;
 use RoundlyConsulting\Imports\Support\Clock;
 use RoundlyConsulting\Imports\Support\ImportModels;
@@ -50,7 +51,7 @@ final readonly class BatchHandle
 
     public function by(Authenticatable|Model|null $actor): self
     {
-        return new self($this->manager, $this->batch, $actor instanceof Model ? $actor : null);
+        return new self($this->manager, $this->batch, Actors::of($actor));
     }
 
     public function model(): ImportBatch
@@ -75,6 +76,26 @@ final readonly class BatchHandle
         $this->view();
 
         return $this->batch->refresh()->status;
+    }
+
+    public function isRunning(): bool
+    {
+        return in_array($this->status(), [BatchStatus::Pending, BatchStatus::Running], true);
+    }
+
+    /**
+     * Completed, failed or cancelled: no chunk runs any more.
+     */
+    public function isFinished(): bool
+    {
+        return in_array($this->status(), [BatchStatus::Completed, BatchStatus::Failed, BatchStatus::Cancelled], true);
+    }
+
+    public function isRolledBack(): bool
+    {
+        $this->view();
+
+        return $this->batch->refresh()->rollback_status === RollbackStatus::RolledBack;
     }
 
     public function progress(): Progress
