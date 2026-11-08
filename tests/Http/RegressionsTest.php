@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use RoundlyConsulting\Imports\Facades\Imports;
 use RoundlyConsulting\Imports\Testing\SpreadsheetFactory;
 
 // Dual review 2026-11-08 — the JSON API halves of the findings.
@@ -71,4 +72,16 @@ it('O-13: the config comments describe the upload budget and the record resource
 
     $this->actingAs(admin($team));
     $upload()->assertCreated();
+});
+
+it('C-10: deleting a saved mapping answers 200 under Imports::fake()->withoutRunning()', function (): void {
+    $team = team();
+    $user = admin($team);
+    $this->actingAs($user);
+    Imports::for($team)->by($user)->mappings('assets')->save('API', ['Asset tag' => 'asset_tag', 'Name' => 'name']);
+    Imports::fake()->withoutRunning();
+
+    $this->deleteJson('/api/imports/importers/assets/mappings/API')->assertOk()->assertExactJson(['deleted' => true]);
+
+    Imports::assertMappingDeleted('API');
 });

@@ -61,12 +61,14 @@ final readonly class SavedMappingsHandle
 
     public function delete(string $name): bool
     {
-        return (bool) $this->manager->perform(
+        // Null only from `Imports::fake()->withoutRunning()`, which records the delete without
+        // running it: report it done, as the real delete of an existing mapping would.
+        return (bool) ($this->manager->perform(
             'deleteMapping',
             DeleteSavedMappingAction::class,
             fn (DeleteSavedMappingAction $action): bool => $action->execute($this->owner, $this->importer, $name, $this->actor),
             ['owner' => $this->owner, 'importer' => $this->importer, 'name' => $name],
-        );
+        ) ?? true);
     }
 
     private function authorize(ImportOperation $operation): void
