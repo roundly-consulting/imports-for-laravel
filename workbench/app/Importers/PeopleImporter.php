@@ -21,19 +21,12 @@ use Workbench\App\Models\User;
 
 /**
  * People join a team by invitation: the importer creates invitations through the host's own
- * callback, and undo revokes them instead of deleting them (an accepted one is kept).
+ * callback, and undo revokes them instead of deleting them (an accepted one is kept). Its key and
+ * label come from the class name; the assets importer declares both.
  */
 final class PeopleImporter extends Importer
 {
-    public function key(): string
-    {
-        return 'people';
-    }
-
-    public function label(): string
-    {
-        return 'People';
-    }
+    // key() and label() default from the class name: `people`, `People`.
 
     public function model(): string
     {

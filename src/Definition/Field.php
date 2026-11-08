@@ -20,7 +20,7 @@ use Stringable;
  * ```php
  * Field::text('asset_tag')->label('app.asset.tag')->aliases('tag', 'inventory no')->example('AST-0042');
  * Field::choice('status')->options(AssetStatus::class)->default('active');
- * Field::reference('vendor')->to(Vendor::class)->by('vat_id', 'name');
+ * Field::reference('vendor')->to(Vendor::class)->by('vat_id', 'name')->storeAs('vendor_id');
  * ```
  *
  * Every value goes through the same pipeline: trim → blank is null → `normalizeUsing()` → type
@@ -82,6 +82,9 @@ final class Field
     public private(set) Ownership $ownership;
 
     public private(set) bool $caseInsensitive = false;
+
+    /** The foreign-key column a reference fills in `ImportRow::attributes()`. */
+    public private(set) ?string $storeAs = null;
 
     private function __construct(
         public private(set) string $name,
@@ -331,6 +334,17 @@ final class Field
     {
         return $this->with(static function (self $field) use ($ownership): void {
             $field->ownership = $ownership;
+        });
+    }
+
+    /**
+     * The column the referenced record's key goes into: `attributes()` and `changes()` hold
+     * `vendor_id => 5` instead of the `vendor` field. Without it, a reference is left out of both.
+     */
+    public function storeAs(string $column): self
+    {
+        return $this->with(static function (self $field) use ($column): void {
+            $field->storeAs = $column;
         });
     }
 

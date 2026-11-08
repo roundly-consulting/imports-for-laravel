@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Imports\Definition;
 
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use RoundlyConsulting\Imports\Enums\ImportKind;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
 use RoundlyConsulting\Imports\Enums\RollbackOutcome;
@@ -19,16 +20,26 @@ use RoundlyConsulting\Imports\Support\Locales;
 abstract class ImportDefinition
 {
     /**
-     * `^[a-z][a-z0-9_.-]{0,63}$`, unique in the registry.
+     * `^[a-z][a-z0-9_.-]{0,63}$`, unique in the registry. Default: the class name without
+     * `Importer`, in snake case (`AssetsImporter` → `assets`, `TeamMembersImporter` →
+     * `team_members`). Saved mappings and `HasImportSource` lookups are keyed by it, so renaming
+     * the class renames the key: production importers should declare it.
      */
-    abstract public function key(): string;
+    public function key(): string
+    {
+        return Str::of(class_basename(static::class))->beforeLast('Importer')->snake()->lower()->toString();
+    }
 
     /**
-     * A translation key (or text), or a locale map `['en' => …, 'sk' => …]`.
+     * A translation key (or text), or a locale map `['en' => …, 'sk' => …]`. Default: the key as a
+     * headline (`team_members` → `Team Members`); override it to translate the label.
      *
      * @return string|array<string, string>
      */
-    abstract public function label(): string|array;
+    public function label(): string|array
+    {
+        return Str::headline($this->key());
+    }
 
     /**
      * How the importer's records belong to the import's owner. Required: fail closed.

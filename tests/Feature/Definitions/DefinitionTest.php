@@ -96,6 +96,51 @@ function importerWith(array $overrides): string
     return $importer::class;
 }
 
+final class TeamMembersImporter extends Importer
+{
+    public function model(): string
+    {
+        return Asset::class;
+    }
+
+    public function ownership(): Ownership
+    {
+        return Ownership::column('team_id');
+    }
+
+    public function fields(): array
+    {
+        return [
+            Field::text('name'),
+            Field::text('serial_number'),
+            Field::reference('vendor')->to(Vendor::class)->by('name')->storeAs('vendor_id'),
+            Field::reference('assignee')->to(Team::class)->by('name')->ownedBy(Ownership::column('id')),
+        ];
+    }
+
+    public function authorize(?Authenticatable $user, Model $owner, ImportOperation $operation): bool
+    {
+        return true;
+    }
+
+    public function create(ImportRow $row, ImportContext $context): Model
+    {
+        return new Asset;
+    }
+}
+
+/**
+ * @param  array<string, mixed>  $values
+ * @param  array<string, string|null>  $raw
+ * @param  array<string, Model|null>  $references
+ * @param  list<string>  $mapped
+ * @param  array<string, string|null>  $storeAs
+ */
+function importRow(array $values, array $raw, array $references = [], array $mapped = [], array $storeAs = []): ImportRow
+{
+    return new ImportRow(2, $values, $raw, [], $references, $mapped === [] ? array_keys($raw) : $mapped, $storeAs);
+}
+
 function definitionError(array $overrides): string
 {
     $registry = new ImporterRegistry(app(), app(DefinitionValidator::class));
@@ -225,4 +270,86 @@ test('fields_are_immutable_and_fluent', function (): void {
         ->and(Field::choice('s')->options(FieldType::class)->options)->toHaveKey('text')
         ->and(FileRules::any()->allows('exe'))->toBeTrue()
         ->and(FileRules::extensions('.PDF')->allows('pdf'))->toBeTrue();
+});
+
+test('an_importer_without_key_and_label_uses_its_class_name', function (): void {
+    Imports::register(TeamMembersImporter::class);
+
+    expect((new TeamMembersImporter)->key())->toBe('team_members')
+        ->and((new TeamMembersImporter)->labelIn('en'))->toBe('Team Members')
+        ->and(Imports::importers()->describe('team_members')->label)->toBe('Team Members')
+        ->and(Imports::importers()->describe('people')->label)->toBe('People');
+});
+
+test('a_class_name_that_yields_no_valid_key_is_refused_naming_the_class', function (): void {
+    $anonymous = new class extends Importer
+    {
+        public function model(): string
+        {
+            return Asset::class;
+        }
+
+        public function ownership(): Ownership
+        {
+            return Ownership::column('team_id');
+        }
+
+        public function fields(): array
+        {
+            return [Field::text('name')];
+        }
+
+        public function authorize(?Authenticatable $user, Model $owner, ImportOperation $operation): bool
+        {
+            return true;
+        }
+
+        public function create(ImportRow $row, ImportContext $context): Model
+        {
+            return new Asset;
+        }
+    };
+    $registry = new ImporterRegistry(app(), app(DefinitionValidator::class));
+    config()->set('imports.importers', []);
+    $registry->register($anonymous::class);
+
+    expect(fn () => $registry->all())->toThrow(InvalidImporterDefinitionException::class, 'declare key() when its class name gives none');
+});
+
+test('attributes_replaces_references_by_their_stored_key', function (): void {
+    $vendor = (new Vendor)->forceFill(['id' => 5]);
+    $row = importRow(['name' => 'Laptop', 'vendor' => 'Lenovo', 'assignee' => 'x'], ['name' => 'Laptop', 'vendor' => 'Lenovo', 'assignee' => 'x'], ['vendor' => $vendor, 'assignee' => null], storeAs: ['vendor' => 'vendor_id', 'assignee' => null]);
+
+    expect($row->attributes())->toBe(['name' => 'Laptop', 'vendor_id' => 5]);
+});
+
+test('a_reference_without_store_as_is_not_in_attributes', function (): void {
+    $row = importRow(['name' => 'Laptop', 'assignee' => 'x'], ['name' => 'Laptop', 'assignee' => 'x'], ['assignee' => (new Team)->forceFill(['id' => 3])], storeAs: ['assignee' => null]);
+
+    expect($row->attributes())->toBe(['name' => 'Laptop'])->and($row->changes())->toBe(['name' => 'Laptop']);
+});
+
+test('changes_excludes_unmapped_and_blank_fields', function (): void {
+    $row = importRow(
+        ['name' => 'Laptop', 'serial_number' => null, 'status' => 'active', 'vendor' => null],
+        ['name' => 'Laptop', 'serial_number' => '  ', 'vendor' => ''],
+        ['vendor' => null],
+        ['name', 'serial_number', 'vendor'],
+        ['vendor' => 'vendor_id'],
+    );
+
+    expect($row->attributes())->toBe(['name' => 'Laptop', 'serial_number' => null, 'status' => 'active', 'vendor_id' => null])
+        ->and($row->changes())->toBe(['name' => 'Laptop'])
+        ->and($row->filledIn('name'))->toBeTrue()
+        ->and($row->filledIn('serial_number'))->toBeFalse()
+        ->and($row->filledIn('status'))->toBeFalse();
+});
+
+test('store_as_naming_another_field_is_refused', function (): void {
+    $vendor = Field::reference('vendor')->to(Vendor::class)->by('name');
+
+    expect(definitionError(['fields' => [Field::text('name'), $vendor->storeAs('name')]]))->toContain('which is a field')
+        ->and(definitionError(['fields' => [Field::text('name'), $vendor->storeAs('vendor id')]]))->toContain('not a column name')
+        ->and(definitionError(['fields' => [Field::text('name')->storeAs('x')]]))->toContain('storeAs() is for reference fields')
+        ->and(definitionError(['fields' => [Field::text('name'), $vendor->storeAs('vendor_id')]]))->toBe('valid');
 });

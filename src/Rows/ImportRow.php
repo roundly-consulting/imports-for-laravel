@@ -21,6 +21,7 @@ final readonly class ImportRow
      * @param  array<string, Cell|null>  $cells
      * @param  array<string, Model|null>  $references
      * @param  list<string>  $mapped  the fields a column was mapped to
+     * @param  array<string, string|null>  $storeAs  reference field => the column its key goes into
      */
     public function __construct(
         private int $rowNumber,
@@ -29,6 +30,7 @@ final readonly class ImportRow
         private array $cells = [],
         private array $references = [],
         private array $mapped = [],
+        private array $storeAs = [],
     ) {}
 
     /**
@@ -82,6 +84,70 @@ final readonly class ImportRow
     public function except(string ...$fields): array
     {
         return array_diff_key($this->values, array_flip($fields));
+    }
+
+    /**
+     * Every value, ready for `Model::create()`: a reference field becomes its `storeAs()` column
+     * holding the referenced key (`vendor_id => 5`), or is left out when it declares none.
+     *
+     * @return array<string, mixed>
+     */
+    public function attributes(): array
+    {
+        $attributes = [];
+
+        foreach ($this->values as $field => $value) {
+            if (! array_key_exists($field, $this->references) && ! array_key_exists($field, $this->storeAs)) {
+                $attributes[$field] = $value;
+
+                continue;
+            }
+
+            if (($column = $this->storeAs[$field] ?? null) !== null) {
+                $attributes[$column] = $this->references[$field]?->getKey();
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Like `attributes()`, restricted to the mapped fields whose cell was not blank — what an
+     * update should write. A blank cell keeps the stored value; to clear values, write
+     * `attributes()` instead.
+     *
+     * @return array<string, mixed>
+     */
+    public function changes(): array
+    {
+        $changes = [];
+        $attributes = $this->attributes();
+
+        foreach ($this->mapped as $field) {
+            $raw = $this->raw[$field] ?? null;
+
+            if ($raw === null || trim($raw) === '') {
+                continue;
+            }
+
+            $column = array_key_exists($field, $this->storeAs) || array_key_exists($field, $this->references) ? ($this->storeAs[$field] ?? null) : $field;
+
+            if ($column !== null && array_key_exists($column, $attributes)) {
+                $changes[$column] = $attributes[$column];
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * Whether the field's cell was mapped and not blank.
+     */
+    public function filledIn(string $field): bool
+    {
+        $raw = $this->raw[$field] ?? null;
+
+        return $this->has($field) && $raw !== null && trim($raw) !== '';
     }
 
     public function reference(string $field): ?Model

@@ -46,6 +46,9 @@ final class RowPipeline
     /** @var list<array<string, string>>|null */
     private ?array $templateExpectations = null;
 
+    /** @var array<string, string|null> reference field => its storeAs() column */
+    private array $storeAs = [];
+
     private readonly CellNormalizer $normalizer;
 
     /**
@@ -68,6 +71,10 @@ final class RowPipeline
             $this->fields[$field->name] = $field;
             $this->attributes[$field->name] = $field->labelIn($locale);
             $this->rules[$field->name] = self::rulesFor($field);
+
+            if ($field->type === FieldType::Reference) {
+                $this->storeAs[$field->name] = $field->storeAs;
+            }
         }
     }
 
@@ -348,6 +355,7 @@ final class RowPipeline
             $evaluation->cells,
             $evaluation->references,
             array_values(array_unique($this->columns)),
+            $this->storeAs,
         );
     }
 

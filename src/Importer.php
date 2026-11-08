@@ -100,7 +100,8 @@ abstract class Importer extends ImportDefinition
         $changes = [];
 
         foreach ($this->fields() as $field) {
-            if (! $row->has($field->name) || $field->type === FieldType::Reference) {
+            // A blank cell keeps the stored value (see ImportRow::changes()): no change to show.
+            if (! $row->filledIn($field->name) || $field->type === FieldType::Reference) {
                 continue;
             }
 

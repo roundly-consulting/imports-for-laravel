@@ -31,7 +31,7 @@ final class DefinitionValidator
         $key = $definition->key();
 
         if (preg_match('/^[a-z][a-z0-9_.-]{0,63}$/', $key) !== 1) {
-            throw InvalidImporterDefinitionException::because($key, 'the key must match ^[a-z][a-z0-9_.-]{0,63}$.');
+            throw InvalidImporterDefinitionException::because($key === '' ? $definition::class : $key, sprintf('the key must match ^[a-z][a-z0-9_.-]{0,63}$ (%s; declare key() when its class name gives none).', $definition::class));
         }
 
         try {
@@ -105,6 +105,24 @@ final class DefinitionValidator
                     || (is_string($rule) && preg_match('/^(exists|unique)(:|$)/i', trim($rule)) === 1)) {
                     throw InvalidImporterDefinitionException::because($key, sprintf('field [%s] uses a database presence rule (exists/unique): it bypasses the owner scope and can reveal another owner\'s data. Use Field::reference() or naturalKey() instead.', $field->name));
                 }
+            }
+        }
+
+        foreach ($names as $field) {
+            if ($field->storeAs === null) {
+                continue;
+            }
+
+            if ($field->type !== FieldType::Reference) {
+                throw InvalidImporterDefinitionException::because($key, sprintf('storeAs() is for reference fields; [%s] is not one.', $field->name));
+            }
+
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/', $field->storeAs) !== 1) {
+                throw InvalidImporterDefinitionException::because($key, sprintf('reference field [%s] stores into [%s], which is not a column name.', $field->name, $field->storeAs));
+            }
+
+            if (isset($names[$field->storeAs])) {
+                throw InvalidImporterDefinitionException::because($key, sprintf('reference field [%s] stores into [%s], which is a field: attributes() would hold it twice.', $field->name, $field->storeAs));
             }
         }
 

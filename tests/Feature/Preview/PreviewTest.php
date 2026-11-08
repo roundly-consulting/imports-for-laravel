@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Imports\Actions\Preview\ValidateRowsAction;
 use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
+use RoundlyConsulting\Imports\Definition\FieldChange;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
 use RoundlyConsulting\Imports\Enums\RowOutcome;
 use RoundlyConsulting\Imports\Enums\RowStatus;
@@ -329,4 +330,16 @@ test('mode_changes_are_refused_while_validating_and_after_commit', function (): 
     $session = uploadAssets($team, admin($team), assetsCsv(assetRows(3)))->preview();
 
     expect(fn () => $session->mode(DuplicateMode::Update))->toThrow(ImportStateException::class);
+});
+
+test('the_update_diff_ignores_blank_cells', function (): void {
+    $team = team();
+    AssetFactory::new()->create(['team_id' => $team->id, 'asset_tag' => 'AST-0001', 'serial_number' => 'SN-KEEP', 'name' => 'Old']);
+    $rows = assetRows(1);
+    $rows[0][1] = '';   // blank serial number: keeps the stored one
+
+    $updates = uploadAssets($team, admin($team), assetsCsv($rows))->mode(DuplicateMode::Update)->preview()->rows(RowFilter::updates())->paginate()->items();
+    $fields = array_map(static fn (FieldChange $change): string => $change->field, $updates[0]->changes);
+
+    expect($fields)->toContain('name')->not->toContain('serial_number');
 });
