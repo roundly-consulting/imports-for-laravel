@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Imports\Actions\Preview;
 
+use Closure;
 use Illuminate\Contracts\Validation\Factory as ValidationFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
@@ -41,8 +42,10 @@ use Throwable;
  * The preview pass: every data row, window by window, through the row pipeline. Writes only the
  * exceptions (invalid, duplicate, matched rows) — no row values — plus the counts, the commit
  * chunk offsets and, for XLSX, the working copy. Nothing is written to host tables and no
- * importer callback runs. Every write is a compare-and-set on `preview_version`: a run whose
- * version went stale (the mapping changed meanwhile) stops without writing.
+ * importer callback runs. Every write is guarded by `preview_version`: row results are inserted
+ * only while the session row — locked for the check — still holds this run's version, the working
+ * copy is this version's own file, and the final update is a compare-and-set. A run whose version
+ * went stale (the mapping changed meanwhile) stops without writing into the newer preview.
  *
  * @internal
  */
@@ -96,7 +99,12 @@ final readonly class ValidateRowsAction
         $workingLocal = null;
 
         try {
-            ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
+            if (! $this->guarded($session, $version, static function () use ($session): void {
+                ImportModels::rowResult()::query()->where('session_id', $session->getKey())->delete();
+            })) {
+                return;
+            }
+
             $file = SessionFiles::open($session, $temp, $importer->limits());
 
             if ($session->format === SourceFormat::Xlsx) {
@@ -124,7 +132,10 @@ final readonly class ValidateRowsAction
                 $processed++;
 
                 if (count($buffer) >= $window) {
-                    $this->window($session, $importer, $pipeline, $buffer, $processed - count($buffer), $seen, $counts);
+                    if (! $this->window($session, $version, $pipeline, $buffer, $processed - count($buffer), $seen, $counts)) {
+                        return;
+                    }
+
                     $buffer = [];
                 }
 
@@ -133,15 +144,16 @@ final readonly class ValidateRowsAction
                 }
             }
 
-            if ($buffer !== []) {
-                $this->window($session, $importer, $pipeline, $buffer, $processed - count($buffer), $seen, $counts);
+            if ($buffer !== [] && ! $this->window($session, $version, $pipeline, $buffer, $processed - count($buffer), $seen, $counts)) {
+                return;
             }
 
             $working?->close();
             $workingPath = null;
 
             if ($workingLocal !== null) {
-                $workingPath = dirname($session->file_path).'/working.csv';
+                // Per version: a superseded run can only ever overwrite or delete its own copy.
+                $workingPath = dirname($session->file_path).'/working-v'.$version.'.csv';
                 $stream = fopen($workingLocal, 'rb');
 
                 if ($stream !== false) {
@@ -206,7 +218,7 @@ final readonly class ValidateRowsAction
      * @param  array<int, list<Cell|null>>  $rows
      * @param  array<string, int>  $counts
      */
-    private function window(ImportSession $session, Importer $importer, RowPipeline $pipeline, array $rows, int $firstPosition, InFileKeys $seen, array &$counts): void
+    private function window(ImportSession $session, int $version, RowPipeline $pipeline, array $rows, int $firstPosition, InFileKeys $seen, array &$counts): bool
     {
         $results = [];
 
@@ -236,7 +248,33 @@ final readonly class ValidateRowsAction
             }
         }
 
-        RowResults::insert($results);
+        return $this->guarded($session, $version, static function () use ($results): void {
+            RowResults::insert($results);
+        });
+    }
+
+    /**
+     * Run $write only while the session still validates this version, holding the session row
+     * locked so a remap (which bumps the version) cannot slip in between the check and the write.
+     *
+     * @param  Closure(): void  $write
+     */
+    private function guarded(ImportSession $session, int $version, Closure $write): bool
+    {
+        return $session->getConnection()->transaction(static function () use ($session, $version, $write): bool {
+            $current = ImportModels::session()::query()
+                ->whereKey($session->getKey())
+                ->where('preview_version', $version)
+                ->where('status', SessionStatus::Validating->value)
+                ->lockForUpdate()
+                ->first([$session->getKeyName()]) !== null;
+
+            if ($current) {
+                $write();
+            }
+
+            return $current;
+        });
     }
 
     /**
