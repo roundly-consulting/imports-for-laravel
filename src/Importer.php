@@ -9,6 +9,7 @@ use LogicException;
 use ReflectionMethod;
 use RoundlyConsulting\Imports\Definition\Field;
 use RoundlyConsulting\Imports\Definition\FieldChange;
+use RoundlyConsulting\Imports\Definition\FileKey;
 use RoundlyConsulting\Imports\Definition\ImportDefinition;
 use RoundlyConsulting\Imports\Definition\Limits;
 use RoundlyConsulting\Imports\Definition\NaturalKey;
@@ -74,6 +75,18 @@ abstract class Importer extends ImportDefinition
      * inside the owner before matching: `NaturalKey::by('product', 'vendor_id', 'plan_id')`.
      */
     public function naturalKey(): ?NaturalKey
+    {
+        return null;
+    }
+
+    /**
+     * What makes a row unique within one file, without matching existing records — for an
+     * importer that always creates (one invitation per email, where old invitations must not
+     * count): `FileKey::by('email')->caseInsensitive()`. A later row sharing an earlier row's key
+     * is a duplicate within the file (`duplicate_in_file`, "Same as row N"), skipped at commit.
+     * Null (the default) checks nothing beyond the natural key; both may be declared.
+     */
+    public function uniqueInFile(): ?FileKey
     {
         return null;
     }

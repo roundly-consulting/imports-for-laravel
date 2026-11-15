@@ -47,12 +47,20 @@ final readonly class RowLabels
         }
 
         $naturalKey = $importer->naturalKey();
+        $fileKey = $importer->uniqueInFile();
+        $candidates = $naturalKey === null ? [] : KeyPart::candidates($importer, $naturalKey);
+
+        // The file-only key labels a row too, after the natural key; its candidates come after the
+        // natural key's, so a stored match_candidate still names the same one.
+        foreach ($fileKey === null ? [] : KeyPart::candidates($importer, $fileKey) as $parts) {
+            $candidates[] = $parts;
+        }
 
         return new self(
             array_flip($mapping),
             $fields,
             $importer->labelField(),
-            $naturalKey === null ? [] : KeyPart::candidates($importer, $naturalKey),
+            $candidates,
         );
     }
 

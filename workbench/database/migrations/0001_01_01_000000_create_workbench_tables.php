@@ -68,6 +68,7 @@ return new class extends Migration
             $table->string('status', 16)->default('pending');
             $table->timestamp('accepted_at')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
 
         Schema::create('documents', function (Blueprint $table): void {

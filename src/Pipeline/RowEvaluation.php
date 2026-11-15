@@ -36,6 +36,9 @@ final class RowEvaluation
 
     public ?string $duplicateReason = null;
 
+    /** The earlier row a duplicate within the file repeats (file-only keys name it: "Same as row N"). */
+    public ?int $duplicateOf = null;
+
     public bool $templateRow = false;
 
     public ?ImportRow $row = null;

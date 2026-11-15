@@ -18,6 +18,9 @@ final class InFileKeys
     /** @var array<string, true> */
     private array $records = [];
 
+    /** @var array<string, int> file-only key digest => the first row that held it */
+    private array $fileKeys = [];
+
     /**
      * @param  list<string>  $digests
      */
@@ -43,6 +46,34 @@ final class InFileKeys
 
         if ($record !== null) {
             $this->records[$record] = true;
+        }
+    }
+
+    /**
+     * The earlier row that holds any of these file-only key digests, or null.
+     *
+     * @param  list<string>  $digests
+     */
+    public function fileRowFor(array $digests): ?int
+    {
+        foreach ($digests as $digest) {
+            if (isset($this->fileKeys[$digest])) {
+                return $this->fileKeys[$digest];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Remember a row's file-only key digests; the first row holding a key keeps it.
+     *
+     * @param  list<string>  $digests
+     */
+    public function addFileKeys(array $digests, int $row): void
+    {
+        foreach ($digests as $digest) {
+            $this->fileKeys[$digest] ??= $row;
         }
     }
 

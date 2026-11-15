@@ -286,7 +286,10 @@ final readonly class ValidateRowsAction
 
         if ($evaluation->status === RowStatus::DuplicateInFile) {
             $code = $evaluation->duplicateReason ?? 'duplicate_in_file';
-            $errors = [CellError::row($code, Locales::line('imports::validation.'.$code, [], $session->locale))];
+            // A file-only key names the earlier row ("Same as row 3"); the natural key's wording is unchanged.
+            $errors = [CellError::row($code, $evaluation->duplicateOf === null
+                ? Locales::line('imports::validation.'.$code, [], $session->locale)
+                : Locales::line('imports::validation.same_as_row', ['row' => $evaluation->duplicateOf], $session->locale))];
         }
 
         return [

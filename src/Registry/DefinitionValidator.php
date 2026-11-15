@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rules\Exists;
 use Illuminate\Validation\Rules\Unique;
+use RoundlyConsulting\Imports\Definition\Field;
 use RoundlyConsulting\Imports\Definition\ImportDefinition;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
 use RoundlyConsulting\Imports\Enums\FieldType;
@@ -134,28 +135,8 @@ final class DefinitionValidator
             }
         }
 
-        foreach ($importer->naturalKey()->candidates ?? [] as $candidate) {
-            $parts = [];
-
-            foreach ($candidate as $name) {
-                $field = $names[$name] ?? $storedAs[$name] ?? null;
-
-                if ($field === null) {
-                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key field [%s] is not a field or a reference\'s storeAs() column.', $name));
-                }
-
-                // A reference is matched by the referenced record's key, which only storeAs() names a column for.
-                if ($field->type === FieldType::Reference && $field->storeAs === null) {
-                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key field [%s] is a reference without storeAs(): declare the column its key is stored in.', $name));
-                }
-
-                if ($field->type === FieldType::Reference && isset($parts[$field->name])) {
-                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key names reference [%s] twice in one candidate (by the field and by its storeAs() column).', $field->name));
-                }
-
-                $parts[$field->name] = true;
-            }
-        }
+        self::keyFields($key, 'natural key', $importer->naturalKey()->candidates ?? [], $names, $storedAs);
+        self::keyFields($key, 'uniqueInFile() key', $importer->uniqueInFile()->candidates ?? [], $names, $storedAs);
 
         $labelField = $importer->labelField();
 
@@ -211,6 +192,40 @@ final class DefinitionValidator
 
         if (! $ok) {
             throw UnscopedQueryException::forModel($key, $target, sprintf('reference field [%s] inherits %s, which %s does not have; declare ownedBy()', $field, $rule->describe(), class_basename($target)));
+        }
+    }
+
+    /**
+     * A key's fields — the natural key's or the file-only key's: each a field or a reference's
+     * storeAs() column, a reference only with storeAs(), and no reference named twice in one candidate.
+     *
+     * @param  array<array-key, list<string>>  $candidates
+     * @param  array<string, Field>  $names
+     * @param  array<string, Field>  $storedAs
+     */
+    private static function keyFields(string $key, string $kind, array $candidates, array $names, array $storedAs): void
+    {
+        foreach ($candidates as $candidate) {
+            $parts = [];
+
+            foreach ($candidate as $name) {
+                $field = $names[$name] ?? $storedAs[$name] ?? null;
+
+                if ($field === null) {
+                    throw InvalidImporterDefinitionException::because($key, sprintf('%s field [%s] is not a field or a reference\'s storeAs() column.', $kind, $name));
+                }
+
+                // A reference is matched by the referenced record's key, which only storeAs() names a column for.
+                if ($field->type === FieldType::Reference && $field->storeAs === null) {
+                    throw InvalidImporterDefinitionException::because($key, sprintf('%s field [%s] is a reference without storeAs(): declare the column its key is stored in.', $kind, $name));
+                }
+
+                if ($field->type === FieldType::Reference && isset($parts[$field->name])) {
+                    throw InvalidImporterDefinitionException::because($key, sprintf('%s names reference [%s] twice in one candidate (by the field and by its storeAs() column).', $kind, $field->name));
+                }
+
+                $parts[$field->name] = true;
+            }
         }
     }
 }

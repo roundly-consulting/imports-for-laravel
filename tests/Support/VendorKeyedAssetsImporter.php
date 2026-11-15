@@ -7,6 +7,7 @@ namespace RoundlyConsulting\Imports\Tests\Support;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Imports\Definition\Field;
+use RoundlyConsulting\Imports\Definition\FileKey;
 use RoundlyConsulting\Imports\Definition\NaturalKey;
 use RoundlyConsulting\Imports\Definition\Ownership;
 use RoundlyConsulting\Imports\Enums\ImportOperation;
@@ -26,10 +27,18 @@ final class VendorKeyedAssetsImporter extends Importer
 
     public static ?string $labelField = null;
 
+    public static ?FileKey $fileKey = null;
+
     public static function reset(): void
     {
         self::$naturalKey = null;
         self::$labelField = null;
+        self::$fileKey = null;
+    }
+
+    public function uniqueInFile(): ?FileKey
+    {
+        return self::$fileKey;
     }
 
     public function key(): string

@@ -6,6 +6,7 @@ namespace Workbench\App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Workbench\Database\Factories\InvitationFactory;
 
 /**
@@ -23,6 +24,8 @@ final class Invitation extends Model
 {
     /** @use HasFactory<InvitationFactory> */
     use HasFactory;
+
+    use SoftDeletes;
 
     protected $guarded = [];
 

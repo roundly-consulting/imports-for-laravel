@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Imports\Pipeline;
 
 use RoundlyConsulting\Imports\Definition\Field;
+use RoundlyConsulting\Imports\Definition\FileKey;
 use RoundlyConsulting\Imports\Definition\NaturalKey;
 use RoundlyConsulting\Imports\Enums\FieldType;
 use RoundlyConsulting\Imports\Importer;
@@ -31,7 +32,7 @@ final readonly class KeyPart
      *
      * @return array<int, non-empty-list<self>> candidate index => parts
      */
-    public static function candidates(Importer $importer, NaturalKey $naturalKey): array
+    public static function candidates(Importer $importer, NaturalKey|FileKey $naturalKey): array
     {
         $fields = [];
         $storedAs = [];

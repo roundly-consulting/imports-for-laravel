@@ -112,6 +112,23 @@ $import->rows()->paginate();                     // every row: status + label ("
 $import->rows(RowFilter::flagged())->paginate(); // only the rows that need attention
 ```
 
+### Duplicates within a file
+
+An importer that always creates (one invitation per email, where old invitations must not count)
+can still refuse the same key twice in one file, without looking up existing records:
+
+```php
+use RoundlyConsulting\Imports\Definition\FileKey;
+
+final class InvitationsImporter extends Importer
+{
+    public function uniqueInFile(): ?FileKey
+    {
+        return FileKey::by('email')->caseInsensitive();   // a later row with the same email: "Same as row 3"
+    }
+}
+```
+
 <!-- roundly-docs:start -->
 ## Documentation
 

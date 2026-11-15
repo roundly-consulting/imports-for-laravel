@@ -20,6 +20,7 @@ return [
     'conflicting_match' => 'Identifikátory riadku zodpovedajú rôznym existujúcim záznamom (:key).',
     'matches_deleted_record' => 'Tento identifikátor (:key) stále používa vymazaný záznam. Obnovte ho alebo zmeňte identifikátor.',
     'duplicate_in_file' => 'Skorší riadok súboru má rovnaký identifikátor.',
+    'same_as_row' => 'Rovnaké ako riadok :row.',
     'same_record' => 'Skorší riadok súboru zodpovedá tomu istému existujúcemu záznamu.',
     'unsaved' => 'Záznam sa neuložil.',
     'other_connection' => 'Záznam sa uložil cez iné databázové pripojenie.',

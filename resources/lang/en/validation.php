@@ -20,6 +20,7 @@ return [
     'conflicting_match' => 'The row\'s identifiers match different existing records (:key).',
     'matches_deleted_record' => 'A deleted record still uses this identifier (:key). Restore that record or change the identifier.',
     'duplicate_in_file' => 'An earlier row of the file has the same identifier.',
+    'same_as_row' => 'Same as row :row.',
     'same_record' => 'An earlier row of the file matches the same existing record.',
     'unsaved' => 'The record was not saved.',
     'other_connection' => 'The record was saved on another database connection.',

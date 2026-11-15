@@ -52,6 +52,9 @@ final class RowPipeline
     /** @var array<int, non-empty-list<KeyPart>>|null */
     private ?array $keyParts = null;
 
+    /** @var array<int, non-empty-list<KeyPart>>|null */
+    private ?array $fileKeyParts = null;
+
     private readonly CellNormalizer $normalizer;
 
     /**
@@ -99,6 +102,7 @@ final class RowPipeline
 
             $this->resolveReferences($evaluations);
             $this->match($evaluations, $seen);
+            $this->matchInFile($evaluations, $seen);
 
             foreach ($evaluations as $evaluation) {
                 if ($evaluation->isValid() && ! $evaluation->templateRow) {
@@ -368,6 +372,66 @@ final class RowPipeline
                 $evaluation->match = $match;
                 $evaluation->status = $match === null ? RowStatus::Valid : RowStatus::Matched;
             }
+        }
+    }
+
+    /**
+     * The importer's file-only key (`uniqueInFile()`): a row still valid after natural-key
+     * matching that shares a filled candidate with an earlier row of the file becomes a duplicate
+     * within the file, naming that row. Never queries existing records. A candidate with a blank
+     * part is skipped, so blank cells are never duplicates of each other.
+     *
+     * @param  list<RowEvaluation>  $evaluations
+     */
+    private function matchInFile(array $evaluations, InFileKeys $seen): void
+    {
+        $fileKey = $this->importer->uniqueInFile();
+
+        if ($fileKey === null) {
+            return;
+        }
+
+        $candidates = $this->fileKeyParts ??= KeyPart::candidates($this->importer, $fileKey);
+
+        foreach ($evaluations as $evaluation) {
+            if (! $evaluation->isValid() || $evaluation->templateRow) {
+                continue;
+            }
+
+            $digests = [];
+
+            foreach ($candidates as $candidate => $parts) {
+                $tuple = [];
+
+                foreach ($parts as $part) {
+                    $value = $part->reference
+                        ? KeyValues::of(($evaluation->references[$part->field] ?? null)?->getKey())
+                        : KeyValues::of($evaluation->values[$part->field] ?? null, $fileKey->caseInsensitive);
+
+                    if ($value === null) {
+                        continue 2;
+                    }
+
+                    $tuple[] = $value;
+                }
+
+                $digests[] = Digests::raw('file'."\x1e".$candidate."\x1e".implode("\x1f", $tuple));
+            }
+
+            $earlier = $seen->fileRowFor($digests);
+
+            if ($earlier === null) {
+                $seen->addFileKeys($digests, $evaluation->number);
+
+                continue;
+            }
+
+            $evaluation->status = RowStatus::DuplicateInFile;
+            $evaluation->duplicateReason = 'duplicate_in_file';
+            $evaluation->duplicateOf = $earlier;
+            $evaluation->match = null;
+            $evaluation->matchKey = null;
+            $evaluation->matchCandidate = null;
         }
     }
 

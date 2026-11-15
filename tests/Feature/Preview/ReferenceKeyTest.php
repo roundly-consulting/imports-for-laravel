@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
 use RoundlyConsulting\Imports\DataTransferObjects\RowResult;
+use RoundlyConsulting\Imports\Definition\FileKey;
 use RoundlyConsulting\Imports\Definition\NaturalKey;
 use RoundlyConsulting\Imports\Enums\DuplicateMode;
 use RoundlyConsulting\Imports\Enums\RowOutcome;
@@ -132,4 +133,18 @@ test('the_storeAs_column_names_the_reference_too_and_case_folding_skips_the_key_
     expect($session->counts()->matched)->toBe(1)
         ->and($session->counts()->duplicatesInFile)->toBe(1)
         ->and($session->rows(RowFilter::status(RowStatus::Matched))->paginate()->items()[0]->outcome)->toBe(RowOutcome::Skip);
+});
+
+test('a_file_key_compares_a_reference_by_the_record_it_resolves_to', function (): void {
+    $team = team();
+    VendorFactory::new()->create(['team_id' => $team->id, 'name' => 'Acme', 'vat_id' => 'SK100']);
+    VendorKeyedAssetsImporter::$fileKey = FileKey::by('vendor', 'serial_number');
+
+    $session = uploadVendorAssets($team, [
+        ['Laptop', 'Acme', 'S-1'],
+        ['Monitor', 'SK100', 'S-1'],   // Acme again, by its VAT id: same vendor + serial
+        ['Mouse', 'SK100', 'S-2'],
+    ])->preview();
+
+    expect(array_column(rowSummary($session), 1))->toBe(['valid', 'duplicate_in_file', 'valid']);
 });
