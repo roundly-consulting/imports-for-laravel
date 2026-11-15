@@ -6,6 +6,22 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 
 ## Unreleased
 
+## 1.2.0 - 2026-11-15
+
+### Added
+
+- `Importer::uniqueInFile(): ?FileKey`: what makes a row unique within one file, without matching existing records.
+  `FileKey::by('email')->caseInsensitive()`, with more candidates through `->then(...)`, normalised like a natural
+  key (trimmed, lower-cased when asked, a reference by the record it resolves to). The first row holding a key is
+  evaluated as usual. Every later row with that key becomes `duplicate_in_file`, is skipped at commit and counted
+  under `duplicates`. Its message names the earlier row: "Same as row 3" (`imports::validation.same_as_row`, en and
+  sk). Existing records, active or soft-deleted, are never looked up. A blank key cell never makes a duplicate.
+  The check carries across preview windows like the natural key's. An importer may declare both; a row that is
+  already a natural-key duplicate keeps that reason. The default `null` changes nothing.
+- A row's label falls back to the file key after the natural key.
+- A file key naming a field that is not one, or a reference without `storeAs()`, is refused when the importer
+  registers, as a natural key is.
+
 ## 1.1.0 - 2026-11-15
 
 ### Added
