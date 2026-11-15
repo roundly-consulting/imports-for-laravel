@@ -52,7 +52,7 @@ function knownMethods(): array
 }
 
 test('every_readme_php_block_parses', function (): void {
-    expect(readmePhpBlocks())->toHaveCount(2);
+    expect(readmePhpBlocks())->toHaveCount(3);
 
     foreach (readmePhpBlocks() as $block) {
         token_get_all('<?php '.$block, TOKEN_PARSE);
@@ -80,7 +80,7 @@ test('every_class_and_method_the_readme_names_exists', function (): void {
         }
     }
 
-    expect($classes)->toHaveCount(9);
+    expect($classes)->toHaveCount(10);
 
     foreach ($classes as $class) {
         expect(class_exists($class) || enum_exists($class))->toBeTrue("The README imports [{$class}], which does not exist.");

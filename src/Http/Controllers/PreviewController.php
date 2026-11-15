@@ -52,6 +52,7 @@ final class PreviewController extends Controller
             'updates' => RowFilter::updates(),
             'creates' => RowFilter::creates(),
             'skips' => RowFilter::skips(),
+            'flagged' => RowFilter::flagged(),
             default => RowFilter::all(),
         };
         $perPage = $request->validated('per_page');

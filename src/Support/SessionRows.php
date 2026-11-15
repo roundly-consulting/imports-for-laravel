@@ -44,6 +44,8 @@ final class SessionRows
     }
 
     /**
+     * Read from the chunk holding the first wanted row.
+     *
      * @param  array<int, true>  $numbers
      * @return Generator<int, list<Cell|null>>
      */
@@ -54,7 +56,17 @@ final class SessionRows
         }
 
         $last = max(array_keys($numbers));
+        $wanted = min(array_keys($numbers));
         [$offset, $first] = ($session->chunk_offsets ?? [])[0] ?? [0, 1];
+
+        // Start at the last chunk that begins at or before the first wanted row, not the file's top.
+        foreach ($session->chunk_offsets ?? [] as [$chunkOffset, $chunkFirst]) {
+            if ((int) $chunkFirst > $wanted) {
+                break;
+            }
+
+            [$offset, $first] = [$chunkOffset, $chunkFirst];
+        }
 
         foreach (self::from($session, (int) $offset, (int) $first, $temp, $maxColumns) as $number => $cells) {
             if ($number > $last) {

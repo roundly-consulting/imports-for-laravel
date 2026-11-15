@@ -19,7 +19,7 @@ final class RowsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['nullable', 'string', 'in:invalid,duplicates,updates,creates,skips,all'],
+            'status' => ['nullable', 'string', 'in:invalid,duplicates,updates,creates,skips,flagged,all'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
         ];

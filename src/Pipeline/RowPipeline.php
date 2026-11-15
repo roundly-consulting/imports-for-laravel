@@ -49,6 +49,9 @@ final class RowPipeline
     /** @var array<string, string|null> reference field => its storeAs() column */
     private array $storeAs = [];
 
+    /** @var array<int, non-empty-list<KeyPart>>|null */
+    private ?array $keyParts = null;
+
     private readonly CellNormalizer $normalizer;
 
     /**
@@ -251,8 +254,12 @@ final class RowPipeline
             return;
         }
 
-        /** @var array<int, array<int, array<string, string>>> $rowKeys row index => candidate => tuple */
+        $candidates = $this->keyParts ??= KeyPart::candidates($this->importer, $naturalKey);
+
+        /** @var array<int, array<int, array<string, string>>> $rowKeys row index => candidate => tuple (column => value) */
         $rowKeys = [];
+        /** @var array<int, array<int, string>> $shownKeys row index => candidate => the key as the row wrote it */
+        $shownKeys = [];
         $tuples = [];
 
         foreach ($evaluations as $position => $evaluation) {
@@ -260,27 +267,34 @@ final class RowPipeline
                 continue;
             }
 
-            foreach ($naturalKey->candidates as $candidate => $fields) {
+            foreach ($candidates as $candidate => $parts) {
                 $tuple = [];
+                $shown = [];
 
-                foreach ($fields as $field) {
-                    $value = KeyValues::of($evaluation->values[$field] ?? null, $naturalKey->caseInsensitive);
+                foreach ($parts as $part) {
+                    // A reference part is the resolved record's key, in the reference's storeAs() column.
+                    $value = $part->reference
+                        ? KeyValues::of(($evaluation->references[$part->field] ?? null)?->getKey())
+                        : KeyValues::of($evaluation->values[$part->field] ?? null, $naturalKey->caseInsensitive);
 
                     if ($value === null) {
                         continue 2;
                     }
 
-                    $tuple[$field] = $value;
+                    $tuple[$part->column] = $value;
+                    $shown[] = $part->reference ? (KeyValues::of($evaluation->values[$part->field] ?? null) ?? $value) : $value;
                 }
 
                 $rowKeys[$position][$candidate] = $tuple;
+                $shownKeys[$position][$candidate] = implode("\x1f", $shown);
                 $tuples[$candidate][implode("\x1f", $tuple)] = $tuple;
             }
         }
 
         $found = $tuples === [] ? [] : NaturalKeyMatcher::find(
             $this->importer->model(),
-            $naturalKey,
+            $candidates,
+            $naturalKey->caseInsensitive,
             array_map(array_values(...), $tuples),
             $this->owner,
             $this->importer->ownership(),
@@ -298,18 +312,19 @@ final class RowPipeline
 
             foreach ($rowKeys[$position] as $candidate => $tuple) {
                 $key = implode("\x1f", $tuple);
+                $shown = $shownKeys[$position][$candidate] ?? $key;
                 $digests[] = Digests::raw($candidate."\x1e".$key);
                 $all = $found[$candidate][$key] ?? [];
                 $records = array_values(array_filter($all, static fn (Model $record): bool => ! self::trashed($record)));
 
                 if ($records === [] && $all !== []) {
-                    $deleted ??= $key;
+                    $deleted ??= $shown;
 
                     continue;
                 }
 
                 if (count($records) > 1) {
-                    $evaluation->fail(null, null, 'ambiguous_match', $this->message('ambiguous_match', ['key' => $key]), $key);
+                    $evaluation->fail(null, null, 'ambiguous_match', $this->message('ambiguous_match', ['key' => $shown]), $shown);
 
                     break;
                 }
@@ -320,7 +335,7 @@ final class RowPipeline
                         $evaluation->matchKey = mb_substr($key, 0, 64);
                         $evaluation->matchCandidate = $candidate;
                     } elseif ($match->getKey() !== $records[0]->getKey()) {
-                        $evaluation->fail(null, null, 'conflicting_match', $this->message('conflicting_match', ['key' => $key]), $key);
+                        $evaluation->fail(null, null, 'conflicting_match', $this->message('conflicting_match', ['key' => $shown]), $shown);
 
                         break;
                     }

@@ -21,6 +21,14 @@ return new class extends Migration
             $table->ulid('team_id');
             $table->string('code');
             $table->string('name');
+            $table->ulid('vendor_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('ulid_vendors', function (Blueprint $table): void {
+            $table->ulid('id')->primary();
+            $table->ulid('team_id');
+            $table->string('name');
             $table->timestamps();
         });
     }

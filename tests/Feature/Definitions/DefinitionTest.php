@@ -70,6 +70,11 @@ function importerWith(array $overrides): string
             return self::$o['naturalKey'] ?? null;
         }
 
+        public function labelField(): ?string
+        {
+            return self::$o['labelField'] ?? null;
+        }
+
         public function modes(): array
         {
             return self::$o['modes'] ?? parent::modes();
@@ -194,9 +199,20 @@ test('definition_rules_name_the_importer_and_the_rule', function (array $overrid
     'reference target' => [['fields' => [Field::reference('vendor')]], 'needs to() with a model class'],
     'reference lookup' => [['fields' => [Field::reference('vendor')->to(Vendor::class)]], 'needs by()'],
     'natural key field' => [['naturalKey' => NaturalKey::by('missing')], 'is not a field'],
-    'natural key reference' => [['fields' => [Field::reference('vendor')->to(Vendor::class)->by('name')], 'naturalKey' => NaturalKey::by('vendor')], 'cannot be a reference'],
+    'natural key reference without storeAs' => [['fields' => [Field::reference('vendor')->to(Vendor::class)->by('name')], 'naturalKey' => NaturalKey::by('vendor')], 'is a reference without storeAs()'],
+    'natural key column of no reference' => [['fields' => [Field::text('name'), Field::reference('vendor')->to(Vendor::class)->by('name')->storeAs('vendor_id')], 'naturalKey' => NaturalKey::by('name', 'assignee_id')], 'is not a field or a reference\'s storeAs() column'],
+    'natural key part twice' => [['fields' => [Field::text('name'), Field::reference('vendor')->to(Vendor::class)->by('name')->storeAs('vendor_id')], 'naturalKey' => NaturalKey::by('vendor', 'vendor_id')], 'names reference [vendor] twice'],
+    'label field' => [['labelField' => 'missing'], 'labelField() [missing] is not a field'],
     'default mode' => [['modes' => [DuplicateMode::CreateNew]], 'defaultMode() must be one of modes()'],
     'formats' => [['formats' => []], 'at least one format'],
+]);
+
+test('a_natural_key_may_name_a_stored_reference_and_a_label_field_may_be_any_field', function (array $overrides): void {
+    expect(definitionError($overrides))->toBe('valid');
+})->with([
+    'by the reference field' => [['fields' => [Field::text('name'), Field::reference('vendor')->to(Vendor::class)->by('name')->storeAs('vendor_id')], 'naturalKey' => NaturalKey::by('name', 'vendor')]],
+    'by its storeAs column' => [['fields' => [Field::text('name'), Field::reference('vendor')->to(Vendor::class)->by('name')->storeAs('vendor_id')], 'naturalKey' => NaturalKey::by('name', 'vendor_id')->then('vendor')]],
+    'a label field' => [['fields' => [Field::text('name'), Field::reference('vendor')->to(Vendor::class)->by('name')], 'labelField' => 'vendor']],
 ]);
 
 test('an_importer_on_another_connection_is_refused', function (): void {

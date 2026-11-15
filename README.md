@@ -99,6 +99,19 @@ $batch = $import->commit();                      // a background job batch
 $batch->rollback();                              // later: removes the rows it created, unless edited since
 ```
 
+### Preview every row, with a label
+
+The preview lists every row (new, update, skip, error), each labelled by the importer's
+`labelField()`, else its natural key. A natural key may include a reference field that declares
+`storeAs()`, such as `NaturalKey::by('product', 'vendor', 'plan')`:
+
+```php
+use RoundlyConsulting\Imports\DataTransferObjects\RowFilter;
+
+$import->rows()->paginate();                     // every row: status + label ("Laptop · Acme")
+$import->rows(RowFilter::flagged())->paginate(); // only the rows that need attention
+```
+
 <!-- roundly-docs:start -->
 ## Documentation
 

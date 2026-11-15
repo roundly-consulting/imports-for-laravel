@@ -8,7 +8,8 @@ use RoundlyConsulting\Imports\Enums\RowOutcome;
 use RoundlyConsulting\Imports\Enums\RowStatus;
 
 /**
- * Which preview rows to list: by status, by planned outcome, or those with an error on a field.
+ * Which preview rows to list: every row, the flagged ones, by status, by planned outcome, or those
+ * with an error on a field.
  */
 final readonly class RowFilter
 {
@@ -19,11 +20,27 @@ final readonly class RowFilter
         public array $statuses = [],
         public ?RowOutcome $outcome = null,
         public ?string $field = null,
+        public bool $everyRow = false,
     ) {}
 
+    /**
+     * Every data row — new, update, skip and error — each with a label, in file order. A row
+     * import lists its plain creates from the file, so before a preview (and once the file is
+     * pruned) this lists the stored rows only. Before 1.1.0 it listed the stored rows: that is
+     * {@see self::flagged()}.
+     */
     public static function all(): self
     {
-        return new self;
+        return new self(everyRow: true);
+    }
+
+    /**
+     * Every row the preview flagged — invalid, failed, a duplicate in the file, a match — and none
+     * that is plainly valid: what `all()` listed for a row import before 1.1.0.
+     */
+    public static function flagged(): self
+    {
+        return new self([RowStatus::Invalid, RowStatus::Failed, RowStatus::DuplicateInFile, RowStatus::Matched]);
     }
 
     public static function invalid(): self
@@ -64,5 +81,13 @@ final readonly class RowFilter
     public function listsCreates(): bool
     {
         return $this->outcome === RowOutcome::Create;
+    }
+
+    /**
+     * Whether plainly valid rows — never stored for a row import — can be in the list.
+     */
+    public function listsValidRows(): bool
+    {
+        return $this->everyRow || $this->listsCreates() || in_array(RowStatus::Valid, $this->statuses, true);
     }
 }

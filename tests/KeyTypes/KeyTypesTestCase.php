@@ -29,7 +29,7 @@ abstract class KeyTypesTestCase extends TestCase
             'imports.record_key_type' => 'uuid',
             'imports.primary_key_type' => 'ulid',
             'options.key_type' => 'ulid',
-            'imports.importers' => [UuidItemsImporter::class],
+            'imports.importers' => [UuidItemsImporter::class, UlidVendorItemsImporter::class],
         ];
     }
 }

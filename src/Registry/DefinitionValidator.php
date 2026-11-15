@@ -126,16 +126,41 @@ final class DefinitionValidator
             }
         }
 
+        $storedAs = [];
+
+        foreach ($names as $field) {
+            if ($field->storeAs !== null) {
+                $storedAs[$field->storeAs] = $field;
+            }
+        }
+
         foreach ($importer->naturalKey()->candidates ?? [] as $candidate) {
+            $parts = [];
+
             foreach ($candidate as $name) {
-                if (! isset($names[$name])) {
-                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key field [%s] is not a field.', $name));
+                $field = $names[$name] ?? $storedAs[$name] ?? null;
+
+                if ($field === null) {
+                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key field [%s] is not a field or a reference\'s storeAs() column.', $name));
                 }
 
-                if ($names[$name]->type === FieldType::Reference) {
-                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key field [%s] cannot be a reference.', $name));
+                // A reference is matched by the referenced record's key, which only storeAs() names a column for.
+                if ($field->type === FieldType::Reference && $field->storeAs === null) {
+                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key field [%s] is a reference without storeAs(): declare the column its key is stored in.', $name));
                 }
+
+                if ($field->type === FieldType::Reference && isset($parts[$field->name])) {
+                    throw InvalidImporterDefinitionException::because($key, sprintf('natural key names reference [%s] twice in one candidate (by the field and by its storeAs() column).', $field->name));
+                }
+
+                $parts[$field->name] = true;
             }
+        }
+
+        $labelField = $importer->labelField();
+
+        if ($labelField !== null && ! isset($names[$labelField])) {
+            throw InvalidImporterDefinitionException::because($key, sprintf('labelField() [%s] is not a field.', $labelField));
         }
 
         $modes = $importer->modes();

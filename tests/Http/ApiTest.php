@@ -324,3 +324,23 @@ test('the_session_list_never_shows_another_owners_sessions', function (): void {
 
     expect($this->getJson('/api/imports/sessions')->assertOk()->json('data'))->toBe([]);
 });
+
+test('the_rows_endpoint_lists_every_row_with_a_label_and_flagged_keeps_the_old_list', function (): void {
+    $team = team();
+    $user = admin($team);
+    $rows = assetRows(3);
+    $rows[1][2] = '';
+    $id = Imports::for($team)->by($user)->upload('assets', assetsCsv($rows))->preview()->id();
+    $this->actingAs($user);
+
+    $all = $this->getJson("/api/imports/sessions/{$id}/rows")->assertOk();
+    $flagged = $this->getJson("/api/imports/sessions/{$id}/rows?status=flagged")->assertOk();
+
+    expect($all->json('meta.total'))->toBe(3)
+        ->and(array_column($all->json('data'), 'label'))->toBe(['AST-0001', 'AST-0002', 'AST-0003'])
+        ->and(array_column($all->json('data'), 'status'))->toBe(['valid', 'invalid', 'valid'])
+        ->and($this->getJson("/api/imports/sessions/{$id}/rows?status=all&per_page=1&page=3")->json('data.0.label'))->toBe('AST-0003')
+        ->and($flagged->json('meta.total'))->toBe(1)
+        ->and($flagged->json('data.0'))->toMatchArray(['row' => 3, 'status' => 'invalid', 'label' => 'AST-0002']);
+    $this->getJson("/api/imports/sessions/{$id}/rows?status=nope")->assertUnprocessable();
+});

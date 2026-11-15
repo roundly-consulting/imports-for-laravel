@@ -68,9 +68,21 @@ abstract class Importer extends ImportDefinition
     }
 
     /**
-     * How a row finds the existing record it duplicates; null = no duplicate detection.
+     * How a row finds the existing record it duplicates; null = no duplicate detection. A part is a
+     * field compared with the same-named attribute, or a reference with `storeAs()` (named by the
+     * field or by its column) compared by the referenced record's key in that column — resolved
+     * inside the owner before matching: `NaturalKey::by('product', 'vendor_id', 'plan_id')`.
      */
     public function naturalKey(): ?NaturalKey
+    {
+        return null;
+    }
+
+    /**
+     * The field whose cell names a row in the preview (`RowResult::$label`). Null = the natural
+     * key's value; a row with neither filled is labelled "Row N".
+     */
+    public function labelField(): ?string
     {
         return null;
     }

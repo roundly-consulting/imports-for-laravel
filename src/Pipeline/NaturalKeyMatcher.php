@@ -7,7 +7,6 @@ namespace RoundlyConsulting\Imports\Pipeline;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Imports\Contracts\OwnerScope;
-use RoundlyConsulting\Imports\Definition\NaturalKey;
 use RoundlyConsulting\Imports\Definition\Ownership;
 
 /**
@@ -20,18 +19,26 @@ final class NaturalKeyMatcher
 {
     /**
      * @param  class-string<Model>  $model
-     * @param  array<int, list<array<string, string>>>  $keys  candidate index => the key tuples (field => canonical value)
+     * @param  array<int, non-empty-list<KeyPart>>  $candidates  candidate index => its parts
+     * @param  array<int, list<array<string, string>>>  $keys  candidate index => the key tuples (column => canonical value)
      * @return array<int, array<string, list<Model>>> candidate index => key string => records
      */
-    public static function find(string $model, NaturalKey $naturalKey, array $keys, Model $owner, Ownership $rule, OwnerScope $scope): array
+    public static function find(string $model, array $candidates, bool $caseInsensitive, array $keys, Model $owner, Ownership $rule, OwnerScope $scope): array
     {
         $found = [];
 
         foreach ($keys as $candidate => $tuples) {
-            $fields = $naturalKey->candidates[$candidate] ?? [];
+            $parts = $candidates[$candidate] ?? [];
 
-            if ($tuples === [] || $fields === []) {
+            if ($tuples === [] || $parts === []) {
                 continue;
+            }
+
+            $folded = [];
+
+            foreach ($parts as $part) {
+                // A reference compares a record key: exact, and LOWER() on an integer column fails.
+                $folded[$part->column] = $caseInsensitive && ! $part->reference;
             }
 
             foreach (array_chunk($tuples, 250) as $chunk) {
@@ -39,14 +46,15 @@ final class NaturalKeyMatcher
                 // that "creates" one of their keys would fail at commit. The pipeline flags it.
                 $query = Scoped::query($model, $owner, $rule, $scope, true);
 
-                if (count($fields) === 1) {
-                    ReferenceResolver::whereIn($query, $fields[0], array_values(array_unique(array_column($chunk, $fields[0]))), $naturalKey->caseInsensitive);
+                if (count($parts) === 1) {
+                    $column = $parts[0]->column;
+                    ReferenceResolver::whereIn($query, $column, array_values(array_unique(array_column($chunk, $column))), $folded[$column]);
                 } else {
-                    $query->where(static function (Builder $outer) use ($chunk, $naturalKey): void {
+                    $query->where(static function (Builder $outer) use ($chunk, $folded): void {
                         foreach ($chunk as $tuple) {
-                            $outer->orWhere(static function (Builder $inner) use ($tuple, $naturalKey): void {
+                            $outer->orWhere(static function (Builder $inner) use ($tuple, $folded): void {
                                 foreach ($tuple as $column => $value) {
-                                    ReferenceResolver::whereIn($inner, $column, [$value], $naturalKey->caseInsensitive);
+                                    ReferenceResolver::whereIn($inner, $column, [$value], $folded[$column] ?? false);
                                 }
                             });
                         }
@@ -54,7 +62,7 @@ final class NaturalKeyMatcher
                 }
 
                 foreach ($query->get() as $record) {
-                    $key = self::keyOf($record, $fields, $naturalKey->caseInsensitive);
+                    $key = self::keyOf($record, $parts, $caseInsensitive);
 
                     if ($key !== null) {
                         $found[$candidate][$key][] = $record;
@@ -67,22 +75,22 @@ final class NaturalKeyMatcher
     }
 
     /**
-     * @param  list<string>  $fields
+     * @param  list<KeyPart>  $parts
      */
-    public static function keyOf(Model $record, array $fields, bool $caseInsensitive): ?string
+    public static function keyOf(Model $record, array $parts, bool $caseInsensitive): ?string
     {
-        $parts = [];
+        $values = [];
 
-        foreach ($fields as $field) {
-            $value = KeyValues::of($record->getAttribute($field), $caseInsensitive);
+        foreach ($parts as $part) {
+            $value = KeyValues::of($record->getAttribute($part->column), $caseInsensitive && ! $part->reference);
 
             if ($value === null) {
                 return null;
             }
 
-            $parts[] = $value;
+            $values[] = $value;
         }
 
-        return implode("\x1f", $parts);
+        return implode("\x1f", $values);
     }
 }
