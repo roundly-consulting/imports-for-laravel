@@ -6,6 +6,25 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 
 ## Unreleased
 
+## 1.1.0 - 2026-11-15
+
+### Added
+
+- Every preview row has a label: `RowResult::$label` (and `label` in the rows endpoint) is the importer's new `labelField()` cell, else the natural key as the row wrote it (the candidate it matched by, else the first one it fills; parts joined with ` · `), else `Row N` (`imports::preview.row_label`, in the session locale — English and Slovak). It covers error rows whose key cell is blank. Labels are read from the file per page and never stored, so the row results still hold no row values.
+- `Importer::labelField(): ?string` — the field whose cell labels a row; a name that is not a field is refused when the importer registers.
+- `RowFilter::flagged()` (HTTP: `status=flagged`) lists every stored row — invalid, failed, a duplicate in the file, a match — which is what `RowFilter::all()` listed for a row import before. `RowFilter::listsValidRows()`.
+- A natural key can hold reference fields: `NaturalKey::by('product', 'vendor', 'plan_id')` names a reference by its field or by its `storeAs()` column. The reference is resolved inside the owner first and compared by the referenced record's key in that column (exactly, also under `caseInsensitive()`), so `Acme` and its VAT id are one key. An unresolvable reference is the usual `unknown_reference` / `ambiguous_reference` row error and never matches.
+
+### Changed
+
+- **Behaviour change:** `RowFilter::all()` — the default of `$session->rows()` and of `GET /sessions/{session}/rows` — lists every data row (new, update, skip and error) in file order with `total` = `counts()->total`, instead of the stored rows only. A row import's plain creates are streamed from the file and merged with the stored rows; a deep page starts at the commit chunk that holds it rather than the file's top. Before a preview and once the file is pruned, `all()` lists the stored rows, and a file batch lists every entry as before. `RowFilter::status(RowStatus::Valid)` now lists the plain creates too.
+- Natural-key refusals are narrower and say why: a reference **without** `storeAs()` (every reference was refused before), a reference named twice in one candidate (`vendor` and `vendor_id`), a name that is neither a field nor a reference's `storeAs()` column.
+- Reading a page's rows back from the file (labels, an update page's field diff) starts at the commit chunk that holds the page's first row instead of the file's top.
+
+### Upgrade
+
+- No migration and no config change. If you relied on `rows()` / `RowFilter::all()` / the HTTP default listing only flagged rows, use `RowFilter::flagged()` / `status=flagged`.
+
 ## 1.0.1 - 2026-11-08
 
 ### Added
