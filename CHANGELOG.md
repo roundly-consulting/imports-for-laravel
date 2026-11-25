@@ -6,6 +6,25 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 
 ## Unreleased
 
+## 1.3.0 - 2026-11-25
+
+### Added
+
+- The XLSX writer is public API: `Xlsx\XlsxWriter`, `Xlsx\SheetLayout` and `Xlsx\InputMessage` are no longer
+  `@internal` and follow semver. Export any data as `.xlsx` with no third-party library: several sheets, a bold and
+  frozen header, column widths, `text` / `date` / `datetime` / `decimal:<scale>` formats, dropdowns and input
+  messages, hidden sheets. Rows stream from any iterable, so a generator is never held in memory.
+- `Imports::xlsx(string $path, bool $sharedStrings = false, bool $date1904 = false): XlsxWriter` (and
+  `XlsxWriter::temporary()`) — a writer with its own temp work directory, removed by `close()`.
+- Formula safety is documented and pinned: every string cell is written as text, never as a formula, including
+  values starting with `=`, `+`, `-` or `@`.
+
+### Changed
+
+- `XlsxWriter::close()` on a writer with no sheet writes an empty `Sheet1` (a workbook needs one sheet), and a
+  failed write throws the writer's `RuntimeException` instead of a PHP warning. Templates and error reports are
+  unchanged.
+
 ## 1.2.0 - 2026-11-15
 
 ### Added
