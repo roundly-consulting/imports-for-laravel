@@ -7,8 +7,8 @@ namespace RoundlyConsulting\Imports\Xlsx;
 /**
  * How the writer lays out one sheet: a bold frozen header, per-column widths and number formats,
  * list validations and input messages (applied to rows 2…`$validationRows + 1`), visibility.
- *
- * @internal
+ * Column indexes are 0-based (`0` = column A). Widths are in Excel character units (default 12).
+ * A `lists` value is formula syntax (`"Yes,No"` with the quotes, or a defined name): never user input.
  */
 final readonly class SheetLayout
 {

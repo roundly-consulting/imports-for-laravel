@@ -34,6 +34,7 @@ use RoundlyConsulting\Imports\Support\ImportsConfig;
 use RoundlyConsulting\Imports\Support\Keys;
 use RoundlyConsulting\Imports\Support\TempFiles;
 use RoundlyConsulting\Imports\Templates\Template;
+use RoundlyConsulting\Imports\Xlsx\XlsxWriter;
 
 /**
  * The package's public API — the root behind the Imports facade, injectable by its own
@@ -127,6 +128,15 @@ class ImportsManager
         $temp = $source->disk === null ? sys_get_temp_dir() : TempFiles::directory();
 
         return SpreadsheetFile::open($source->localPath($temp), ReadOptions::fromConfig(sheet: $sheet, delimiter: $delimiter, headerRow: $headerRow));
+    }
+
+    /**
+     * A streaming XLSX writer for any data — the one behind templates and error reports — with a
+     * temp work directory that close() removes. Strings are always written as text, never formulas.
+     */
+    public function xlsx(string $path, bool $sharedStrings = false, bool $date1904 = false): XlsxWriter
+    {
+        return XlsxWriter::temporary($path, $sharedStrings, $date1904);
     }
 
     public function prune(): PruneReport

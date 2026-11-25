@@ -6,16 +6,28 @@ namespace RoundlyConsulting\Imports\Xlsx;
 
 use Carbon\CarbonInterface;
 use DateTimeInterface;
+use RoundlyConsulting\Imports\Support\TempFiles;
 use RuntimeException;
 use XMLWriter;
 use ZipArchive;
 
 /**
- * A minimal, valid XLSX writer on ext-xmlwriter + ext-zip — for templates and error reports only
- * (no formulas, merges or protection). Strings are inline by default, so the output carries no
- * formula and needs no shared-strings table; sheet XML streams to a temp file row by row.
+ * A minimal, valid XLSX writer on ext-xmlwriter + ext-zip — the one behind the package's templates
+ * and error reports, public API since 1.3.0. Each sheet's XML streams to a file in the work
+ * directory row by row, so rows can come from a generator of any length; `close()` zips the parts.
  *
- * @internal
+ * Formula-safe: a string cell is always written as text (an inline string, or a shared string
+ * with `$sharedStrings`), never as a formula — `=SUM(A1)`, `+1`, `-1` or `@x` reach the user as the
+ * literal text. The writer never emits a cell formula. Only the `SheetLayout::$lists` values and
+ * `defineName()` ranges are formula syntax, so they must come from your code, never from users.
+ *
+ * Not supported: formulas, merged cells, sheet protection, colours, borders, images.
+ *
+ * ```php
+ * $writer = Imports::xlsx($path);   // or new XlsxWriter($path, $workDirectory)
+ * $writer->addSheet('Register', $rows, new SheetLayout(boldHeader: true, freezeHeader: true));
+ * $writer->close();
+ * ```
  */
 final class XlsxWriter
 {
@@ -39,6 +51,14 @@ final class XlsxWriter
     /** @var array<string, int> */
     private array $strings = [];
 
+    /** A work directory this writer made itself, removed by close(). */
+    private ?string $ownedDirectory = null;
+
+    /**
+     * Give each writer a work directory of its own: sheet parts land there as `sheet<N>.xml` and
+     * stay after close(). For a temp directory that is made and removed for you, use
+     * {@see self::temporary()} or `Imports::xlsx()`.
+     */
     public function __construct(
         private readonly string $path,
         private readonly string $workDirectory,
@@ -46,12 +66,33 @@ final class XlsxWriter
         private readonly bool $date1904 = false,
     ) {}
 
+    /**
+     * A writer with its own temp work directory (under `imports.storage.tmp_path`), removed when
+     * close() runs; a writer never closed leaves it to `imports:sweep`.
+     */
+    public static function temporary(string $path, bool $sharedStrings = false, bool $date1904 = false): self
+    {
+        $directory = TempFiles::directory();
+        $writer = new self($path, $directory, $sharedStrings, $date1904);
+        $writer->ownedDirectory = $directory;
+
+        return $writer;
+    }
+
+    /**
+     * A workbook-level defined name, e.g. `defineName('Statuses', 'Lists!$A$1:$A$3')` for a list
+     * validation. The range is formula syntax: never pass user input.
+     */
     public function defineName(string $name, string $range): void
     {
         $this->definedNames[$name] = $range;
     }
 
     /**
+     * Stream one sheet. The first row is the header when the layout makes it bold; a date cell
+     * takes the column's format, else `date` (midnight) or `datetime`. A sheet name is cleaned to
+     * Excel's rules (31 characters, no `[]:*?/\`) and made unique.
+     *
      * @param  iterable<list<string|int|float|bool|DateTimeInterface|null>>  $rows
      */
     public function addSheet(string $name, iterable $rows, SheetLayout $layout = new SheetLayout): void
@@ -134,7 +175,36 @@ final class XlsxWriter
         $this->sheets[] = ['name' => $name, 'file' => $file, 'hidden' => $layout->hidden];
     }
 
+    /**
+     * Write the workbook to `$path` (an empty `Sheet1` when no sheet was added).
+     */
     public function close(): void
+    {
+        try {
+            if ($this->sheets === []) {
+                $this->addSheet('Sheet1', []);
+            }
+
+            $this->zip();
+        } finally {
+            TempFiles::remove($this->ownedDirectory);
+            $this->ownedDirectory = null;
+        }
+    }
+
+    /**
+     * A date as an Excel serial day number (fractional for the time of day), from the wall-clock
+     * date and time — the timezone is not converted.
+     */
+    public static function serial(DateTimeInterface $date, bool $date1904 = false): float
+    {
+        $epoch = $date1904 ? gmmktime(0, 0, 0, 1, 1, 1904) : gmmktime(0, 0, 0, 12, 30, 1899);
+        $wall = gmmktime((int) $date->format('H'), (int) $date->format('i'), (int) $date->format('s'), (int) $date->format('n'), (int) $date->format('j'), (int) $date->format('Y'));
+
+        return round(($wall - $epoch) / 86400, 8);
+    }
+
+    private function zip(): void
     {
         $zip = new ZipArchive;
 
@@ -158,17 +228,9 @@ final class XlsxWriter
             $zip->addFile($sheet['file'], 'xl/worksheets/sheet'.($position + 1).'.xml');
         }
 
-        if (! $zip->close()) {
+        if (! @$zip->close()) {
             throw new RuntimeException('Cannot write the workbook.');
         }
-    }
-
-    public static function serial(DateTimeInterface $date, bool $date1904 = false): float
-    {
-        $epoch = $date1904 ? gmmktime(0, 0, 0, 1, 1, 1904) : gmmktime(0, 0, 0, 12, 30, 1899);
-        $wall = gmmktime((int) $date->format('H'), (int) $date->format('i'), (int) $date->format('s'), (int) $date->format('n'), (int) $date->format('j'), (int) $date->format('Y'));
-
-        return round(($wall - $epoch) / 86400, 8);
     }
 
     private function cell(XMLWriter $xml, string $reference, string|int|float|bool|DateTimeInterface|null $value, int $style): void

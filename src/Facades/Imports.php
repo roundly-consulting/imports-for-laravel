@@ -20,6 +20,7 @@ use RoundlyConsulting\Imports\Testing\ImportsFake;
  * @method static \RoundlyConsulting\Imports\Handles\SessionHandle session(\RoundlyConsulting\Imports\Models\ImportSession|int|string $session)
  * @method static \RoundlyConsulting\Imports\Handles\BatchHandle batch(\RoundlyConsulting\Imports\Models\ImportBatch|int|string $batch)
  * @method static \RoundlyConsulting\Imports\Reading\SpreadsheetFile read(\RoundlyConsulting\Imports\DataTransferObjects\ImportSource|\Illuminate\Http\UploadedFile|string $file, string|int|null $sheet = null, string|null $delimiter = null, int $headerRow = 1)
+ * @method static \RoundlyConsulting\Imports\Xlsx\XlsxWriter xlsx(string $path, bool $sharedStrings = false, bool $date1904 = false)
  * @method static \RoundlyConsulting\Imports\DataTransferObjects\PruneReport prune()
  * @method static \RoundlyConsulting\Imports\DataTransferObjects\SweepReport sweep()
  * @method static void assertUploaded(string|null $importer = null, \Closure|null $callback = null)
